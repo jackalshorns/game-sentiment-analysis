@@ -1,0 +1,62 @@
+name: Run Sonar Analysis
+
+on:
+  # Manual trigger from GitHub UI — go to Actions → Run Sonar Analysis → Run workflow
+  workflow_dispatch:
+    inputs:
+      game:
+        description: 'Game name to analyze (leave blank to run all 10 games)'
+        required: false
+        default: ''
+      pipeline:
+        description: 'Which pipeline to run'
+        required: false
+        default: 'sonar'
+        type: choice
+        options:
+          - sonar      # Press + Reddit + YouTube  (10–50 insights/game, ~15 min)
+          - expanded   # Steam + Reddit + YouTube  (165–356 insights/game, ~25 min)
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60   # safety cap — full 10-game run takes ~25 min
+
+    permissions:
+      contents: write     # needed to commit reports back to the repo
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run analysis
+        run: |
+          GAME_ARG=""
+          if [[ -n "${{ inputs.game }}" ]]; then
+            GAME_ARG="--game \"${{ inputs.game }}\""
+          fi
+
+          if [[ "${{ inputs.pipeline }}" == "expanded" ]]; then
+            eval python3 analyze_expanded.py $GAME_ARG
+          else
+            eval python3 analyze_sonar.py $GAME_ARG
+          fi
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Commit reports to repo
+        run: |
+          git config user.email "action@github.com"
+          git config user.name "Sonar Action"
+          git add reports_sonar/ reports_expanded/ 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "Sonar run — $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push
