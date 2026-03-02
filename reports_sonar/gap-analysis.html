@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Why Sonar Has More Insights — Gap Analysis & Expansion Plan</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #0a0f1a; color: #e2e8f0; line-height: 1.6; }
+
+  .hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+    border-bottom: 1px solid #1e293b;
+    padding: 48px 32px 36px;
+    text-align: center;
+  }
+  .hero h1 { font-size: 1.9rem; font-weight: 800; color: #f1f5f9; margin-bottom: 10px; }
+  .hero p { color: #94a3b8; font-size: 1rem; max-width: 680px; margin: 0 auto; }
+  .tag { display: inline-block; background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 3px 10px; border-radius: 20px; margin: 8px 4px 0; }
+
+  .container { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+  section { margin-bottom: 52px; }
+
+  h2 { font-size: 1.25rem; font-weight: 700; color: #f1f5f9; margin-bottom: 6px; padding-bottom: 10px; border-bottom: 1px solid #1e293b; }
+  h3 { font-size: 1rem; font-weight: 700; color: #e2e8f0; margin: 20px 0 8px; }
+  p  { color: #94a3b8; font-size: .9rem; margin-bottom: 10px; }
+
+  /* Scorecard */
+  .scorecard { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .score-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 20px; }
+  .score-box.us { border-color: #334155; }
+  .score-box.them { border-color: #4f46e5; background: #0d0b1a; }
+  .score-box .label { font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #64748b; margin-bottom: 8px; }
+  .score-box .value { font-size: 2.2rem; font-weight: 800; color: #f1f5f9; }
+  .score-box .sub { font-size: .8rem; color: #64748b; margin-top: 4px; }
+  .score-box.them .value { color: #818cf8; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; margin: 14px 0; }
+  th { background: #0f172a; color: #64748b; font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 8px 12px; text-align: left; border-bottom: 1px solid #1e293b; }
+  td { padding: 9px 12px; border-bottom: 1px solid #0f172a; color: #cbd5e1; vertical-align: top; }
+  tr:hover td { background: #0f172a; }
+  .badge { display: inline-block; font-size: .68rem; font-weight: 700; padding: 2px 8px; border-radius: 12px; }
+  .badge.free    { background: #0f2b1d; color: #4ade80; border: 1px solid #166534; }
+  .badge.paid    { background: #2d1b00; color: #fb923c; border: 1px solid #92400e; }
+  .badge.hard    { background: #2d0a0a; color: #f87171; border: 1px solid #991b1b; }
+  .badge.medium  { background: #1a1a2e; color: #a78bfa; border: 1px solid #4c1d95; }
+  .badge.easy    { background: #0f2b1d; color: #4ade80; border: 1px solid #166534; }
+  .badge.high    { background: #0f2b1d; color: #4ade80; }
+  .badge.med     { background: #1e293b; color: #94a3b8; }
+  .badge.low     { background: #2d0a0a; color: #f87171; }
+
+  /* Gap bar */
+  .gap-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+  .gap-label { width: 200px; font-size: .82rem; color: #94a3b8; flex-shrink: 0; }
+  .gap-track { flex: 1; height: 8px; background: #1e293b; border-radius: 4px; overflow: hidden; position: relative; }
+  .gap-us    { height: 100%; background: #334155; border-radius: 4px; }
+  .gap-them  { height: 100%; background: #4f46e5; border-radius: 4px; position: absolute; top: 0; left: 0; }
+  .gap-count { width: 80px; text-align: right; font-size: .78rem; font-weight: 700; }
+  .gap-count.us   { color: #475569; }
+  .gap-count.them { color: #818cf8; }
+
+  /* Phase cards */
+  .phases { display: flex; flex-direction: column; gap: 16px; margin: 20px 0; }
+  .phase-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 20px 24px; position: relative; overflow: hidden; }
+  .phase-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+  .phase-card.p1::before { background: #4ade80; }
+  .phase-card.p2::before { background: #60a5fa; }
+  .phase-card.p3::before { background: #a78bfa; }
+  .phase-card.p4::before { background: #fb923c; }
+  .phase-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+  .phase-num  { font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+  .phase-card.p1 .phase-num { color: #4ade80; }
+  .phase-card.p2 .phase-num { color: #60a5fa; }
+  .phase-card.p3 .phase-num { color: #a78bfa; }
+  .phase-card.p4 .phase-num { color: #fb923c; }
+  .phase-title { font-size: 1rem; font-weight: 700; color: #f1f5f9; }
+  .phase-meta  { font-size: .78rem; color: #64748b; }
+  .phase-desc  { font-size: .85rem; color: #94a3b8; margin-bottom: 12px; }
+  .source-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .stag { font-size: .72rem; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+  .stag.steam   { background: #001a2e; color: #38bdf8; border: 1px solid #0c4a6e; }
+  .stag.yt      { background: #2d0a0a; color: #f87171; border: 1px solid #7f1d1d; }
+  .stag.reddit  { background: #2d1400; color: #fb923c; border: 1px solid #78350f; }
+  .stag.meta    { background: #002b1d; color: #4ade80; border: 1px solid #14532d; }
+  .stag.oc      { background: #0f1a2d; color: #60a5fa; border: 1px solid #1e3a5f; }
+  .stag.gj      { background: #1a0f2d; color: #a78bfa; border: 1px solid #3b0764; }
+  .stag.twitch  { background: #1a0f2d; color: #c084fc; border: 1px solid #581c87; }
+  .stag.ign     { background: #2d0a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+
+  .delta-table { margin: 20px 0; }
+  .delta-row { display: flex; gap: 16px; padding: 12px 0; border-bottom: 1px solid #1e293b; }
+  .delta-cat { font-weight: 700; font-size: .88rem; color: #e2e8f0; width: 200px; flex-shrink: 0; }
+  .delta-detail { font-size: .83rem; color: #64748b; flex: 1; }
+  .delta-impact { font-size: .78rem; font-weight: 700; }
+  .delta-impact.hi { color: #4ade80; }
+  .delta-impact.mid { color: #fbbf24; }
+
+  /* Projection box */
+  .projection { background: linear-gradient(135deg, #0f172a, #0d0b1a); border: 1px solid #4f46e5; border-radius: 12px; padding: 24px; margin: 20px 0; }
+  .projection h3 { color: #818cf8; border: none; margin-top: 0; }
+  .proj-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; }
+  .proj-item { text-align: center; }
+  .proj-item .pnum { font-size: 1.8rem; font-weight: 800; color: #818cf8; }
+  .proj-item .plabel { font-size: .78rem; color: #64748b; }
+
+  .callout { background: #0f1f10; border: 1px solid #166534; border-radius: 10px; padding: 14px 18px; color: #86efac; font-size: .85rem; margin: 16px 0; }
+  .warn    { background: #1f0f00; border: 1px solid #78350f; border-radius: 10px; padding: 14px 18px; color: #fdba74; font-size: .85rem; margin: 16px 0; }
+
+  footer { text-align: center; color: #334155; font-size: .75rem; padding: 24px; border-top: 1px solid #1e293b; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>Why Sonar Has More Insights — and How to Close the Gap</h1>
+  <p>Root cause analysis of the source volume disparity, with a concrete expansion plan to reach Sonar-level insight density</p>
+  <div>
+    <span class="tag">Prototype v2 — Dual Stream</span>
+    <span class="tag">Competitive Gap</span>
+    <span class="tag">Data Pipeline</span>
+    <span class="tag">Updated Mar 2026</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- ── v2 UPDATE BANNER ──────────────────────────────────────── -->
+  <section style="background:linear-gradient(135deg,#0d1f10,#0f1a0d);border:1px solid #166534;border-radius:14px;padding:24px;margin-bottom:40px">
+    <h2 style="color:#4ade80;border-color:#166534;margin-bottom:12px">✅ March 2026 Update — Dual-Stream Pipeline Live</h2>
+    <p style="color:#86efac;font-size:.9rem;margin-bottom:16px">The original analysis (Feb 28) was based on a Steam-only prototype with 80 insights per game. The pipeline has been rebuilt with dual-stream (press + player), multi-source data, and GitHub Actions automation. Here's what changed:</p>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px">
+      <div style="background:#0f1f10;border:1px solid #166534;border-radius:10px;padding:16px;text-align:center">
+        <div style="font-size:1.8rem;font-weight:800;color:#4ade80">~150</div>
+        <div style="font-size:.75rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Avg insights per game now</div>
+        <div style="font-size:.7rem;color:#4ade80;margin-top:4px">was 80 (Steam only)</div>
+      </div>
+      <div style="background:#0f1f10;border:1px solid #166534;border-radius:10px;padding:16px;text-align:center">
+        <div style="font-size:1.8rem;font-weight:800;color:#4ade80">1,518</div>
+        <div style="font-size:.75rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Total insights across 10 games</div>
+        <div style="font-size:.7rem;color:#4ade80;margin-top:4px">was ~800 (100 Steam reviews × 10)</div>
+      </div>
+      <div style="background:#0f1f10;border:1px solid #166534;border-radius:10px;padding:16px;text-align:center">
+        <div style="font-size:1.8rem;font-weight:800;color:#4ade80">2</div>
+        <div style="font-size:.75rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Separate sentiment streams</div>
+        <div style="font-size:.7rem;color:#4ade80;margin-top:4px">Press (articles) + Player (Steam)</div>
+      </div>
+    </div>
+
+    <table style="width:100%;font-size:.82rem;border-collapse:collapse">
+      <thead>
+        <tr>
+          <th style="background:#0f2b1d;color:#4ade80;padding:8px 12px;text-align:left;border-bottom:1px solid #166534">Change</th>
+          <th style="background:#0f2b1d;color:#4ade80;padding:8px 12px;text-align:left;border-bottom:1px solid #166534">Before (Feb 28)</th>
+          <th style="background:#0f2b1d;color:#4ade80;padding:8px 12px;text-align:left;border-bottom:1px solid #166534">After (Mar 2026)</th>
+          <th style="background:#0f2b1d;color:#4ade80;padding:8px 12px;text-align:left;border-bottom:1px solid #166534">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#cbd5e1">Data streams</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#64748b">Steam only</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#4ade80">Press articles + Steam reviews</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#4ade80">✅ Done</td></tr>
+        <tr><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#cbd5e1">Sources per game</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#64748b">100 (Steam reviews only)</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#4ade80">100–122 (Steam + press articles)</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#4ade80">✅ Done</td></tr>
+        <tr><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#cbd5e1">Category framework</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#64748b">8 categories (keyword match)</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#4ade80">26 categories (AI extraction)</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#4ade80">✅ Done</td></tr>
+        <tr><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#cbd5e1">Reference score</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#64748b">None</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#4ade80">Steam All-Time % + Metacritic</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#4ade80">✅ Done</td></tr>
+        <tr><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#cbd5e1">OpenCritic</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#64748b">Planned</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#f87171">❌ Auth now required (was "free public")</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#f87171">Blocked</td></tr>
+        <tr><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#cbd5e1">Reddit</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#64748b">Planned</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#f87171">❌ HTTP 403 from GitHub Actions IPs (Azure block)</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#f87171">Blocked</td></tr>
+        <tr><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#cbd5e1">YouTube transcripts</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#64748b">Phase 2</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#fbbf24">⏸ YT_BLOCKED=True (needs transcript proxy)</td><td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#fbbf24">Backlog</td></tr>
+        <tr><td style="padding:8px 12px;color:#cbd5e1">GitHub Actions automation</td><td style="padding:8px 12px;color:#64748b">None (local only)</td><td style="padding:8px 12px;color:#4ade80">workflow_dispatch — run from any browser</td><td style="padding:8px 12px;color:#4ade80">✅ Done</td></tr>
+      </tbody>
+    </table>
+
+    <div style="margin-top:16px;padding:12px 16px;background:#0f1a0d;border:1px solid #166534;border-radius:8px;font-size:.82rem;color:#86efac">
+      📊 <strong>Current gap (Balatro):</strong> Our prototype: 112 insights · 103 sources &nbsp;→&nbsp; Sprung Sonar: 370 insights · 56 sources &nbsp;→&nbsp; <strong>3.3× gap</strong> (down from 4.6× in Feb baseline). Main remaining drivers: YouTube (disabled) and Reddit (IP blocked).
+    </div>
+  </section>
+
+  <!-- ── 1. THE GAP ─────────────────────────────────────────────── -->
+  <section>
+    <h2>1. The Numbers — Our Prototype vs. Sonar</h2>
+    <p>Using Balatro as the benchmark: Sonar shows it publicly in their press coverage, giving a clean apples-to-apples comparison point.</p>
+
+    <div class="scorecard">
+      <div class="score-box us">
+        <div class="label">Our Prototype — Balatro <span style="color:#4ade80;font-size:.65rem">(Mar 2026)</span></div>
+        <div class="value">112</div>
+        <div class="sub">total insights (was 80 — Feb baseline)</div>
+        <div class="sub" style="margin-top:8px">2 source types · 100 Steam reviews + 3 press articles · 103 sources total</div>
+      </div>
+      <div class="score-box them">
+        <div class="label">Sonar — Balatro</div>
+        <div class="value">370</div>
+        <div class="sub">insights from <strong style="color:#818cf8">56 sources</strong></div>
+        <div class="sub" style="margin-top:8px">3+ source types · YouTube + articles + community</div>
+      </div>
+    </div>
+
+    <p style="margin-top:16px">That's a <strong style="color:#f1f5f9">3.3× insight gap</strong> on a single game — down from <span style="text-decoration:line-through;color:#64748b">4.6×</span> in the Feb baseline. The remaining gap is almost entirely explained by YouTube (disabled) and Reddit (blocked on GitHub Actions IPs).</p>
+
+    <!-- 10-game overview -->
+    <h3 style="margin-top:24px">Across all 10 games (Mar 2026 run)</h3>
+    <table style="font-size:.82rem">
+      <thead>
+        <tr>
+          <th>Game</th>
+          <th>Press %</th>
+          <th>Player %</th>
+          <th>Total Ins</th>
+          <th>Sources</th>
+          <th>Steam All-Time</th>
+          <th>Metacritic</th>
+          <th>Sprung Sonar</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Black Myth: Wukong</td><td style="color:#00d4ff">58%</td><td style="color:#4ade80">58%</td><td style="color:#f1f5f9;font-weight:700">151</td><td>102</td><td>94%</td><td>81</td><td style="color:#64748b">—</td></tr>
+        <tr><td>Palworld</td><td style="color:#64748b">N/A</td><td style="color:#4ade80">84%</td><td style="color:#f1f5f9;font-weight:700">77</td><td>100</td><td>95%</td><td style="color:#64748b">TBD</td><td style="color:#64748b">—</td></tr>
+        <tr><td>Helldivers 2</td><td style="color:#00d4ff">93%</td><td style="color:#4ade80">56%</td><td style="color:#f1f5f9;font-weight:700">139</td><td>103</td><td>83%</td><td>82</td><td style="color:#64748b">—</td></tr>
+        <tr><td>Balatro</td><td style="color:#00d4ff">100%</td><td style="color:#4ade80">77%</td><td style="color:#f1f5f9;font-weight:700">112</td><td>103</td><td>98%</td><td>90</td><td style="color:#fb923c">88% · 370 ins</td></tr>
+        <tr><td>Hell Is Us</td><td style="color:#00d4ff">54%</td><td style="color:#4ade80">49%</td><td style="color:#f1f5f9;font-weight:700">243</td><td>101</td><td>87%</td><td>77</td><td style="color:#64748b">—</td></tr>
+        <tr><td>Outer Wilds</td><td style="color:#00d4ff">100%</td><td style="color:#4ade80">76%</td><td style="color:#f1f5f9;font-weight:700">144</td><td>122</td><td>95%</td><td>85</td><td style="color:#fb923c">81% · 610 ins</td></tr>
+        <tr><td>Disco Elysium</td><td style="color:#00d4ff">89%</td><td style="color:#4ade80">72%</td><td style="color:#f1f5f9;font-weight:700">131</td><td>102</td><td>92%</td><td>91</td><td style="color:#64748b">—</td></tr>
+        <tr><td>Pentiment</td><td style="color:#00d4ff">95%</td><td style="color:#4ade80">67%</td><td style="color:#f1f5f9;font-weight:700">173</td><td>102</td><td>95%</td><td>86</td><td style="color:#64748b">—</td></tr>
+        <tr><td>Citizen Sleeper</td><td style="color:#00d4ff">86%</td><td style="color:#4ade80">67%</td><td style="color:#f1f5f9;font-weight:700">184</td><td>102</td><td>94%</td><td>82</td><td style="color:#fb923c">75% · 389 ins</td></tr>
+        <tr><td>Signalis</td><td style="color:#00d4ff">84%</td><td style="color:#4ade80">78%</td><td style="color:#f1f5f9;font-weight:700">154</td><td>102</td><td>97%</td><td>81</td><td style="color:#64748b">—</td></tr>
+      </tbody>
+    </table>
+
+    <!-- Visual gap bars -->
+    <h3>Insight gap by dimension <span style="font-size:.75rem;font-weight:400;color:#4ade80">(updated Mar 2026)</span></h3>
+
+    <div class="gap-row">
+      <div class="gap-label">Total source docs (Balatro)</div>
+      <div class="gap-track" style="position:relative;height:8px;">
+        <div class="gap-them" style="width:100%;position:absolute;background:#4f46e5;height:8px;border-radius:4px;opacity:.3;"></div>
+        <div class="gap-us" style="width:100%;background:#334155;"></div>
+      </div>
+      <div class="gap-count us">103</div>
+      <div style="font-size:.7rem;color:#334155;margin:0 4px">/</div>
+      <div class="gap-count them">56</div>
+    </div>
+    <p style="font-size:.75rem;color:#64748b;margin-bottom:10px">⚠ We now have MORE source documents than Sprung (103 vs 56) — but our 100 are short Steam reviews; theirs are long-form YouTube, articles, community. Quality > quantity here.</p>
+
+    <div class="gap-row">
+      <div class="gap-label">Insights per source doc</div>
+      <div class="gap-track" style="position:relative;height:8px;">
+        <div class="gap-them" style="width:100%;position:absolute;background:#4f46e5;height:8px;border-radius:4px;opacity:.3;"></div>
+        <div class="gap-us" style="width:16.5%;"></div>
+      </div>
+      <div class="gap-count us">~1.1</div>
+      <div style="font-size:.7rem;color:#334155;margin:0 4px">/</div>
+      <div class="gap-count them">~6.6</div>
+    </div>
+
+    <div class="gap-row">
+      <div class="gap-label">Category depth (# cats)</div>
+      <div class="gap-track" style="position:relative;height:8px;">
+        <div class="gap-them" style="width:100%;position:absolute;background:#4f46e5;height:8px;border-radius:4px;opacity:.3;"></div>
+        <div class="gap-us" style="width:61.5%;"></div>
+      </div>
+      <div class="gap-count us">16</div>
+      <div style="font-size:.7rem;color:#334155;margin:0 4px">/</div>
+      <div class="gap-count them">26</div>
+    </div>
+    <p style="font-size:.75rem;color:#64748b;margin-bottom:10px">Category coverage up from 8 → 16 for Balatro, 19–25/26 for other games. Balatro's lower coverage (16/26) due to its focused card-game design rather than open-world variety.</p>
+
+    <div class="gap-row">
+      <div class="gap-label">Total insights (Balatro)</div>
+      <div class="gap-track" style="position:relative;height:8px;">
+        <div class="gap-them" style="width:100%;position:absolute;background:#4f46e5;height:8px;border-radius:4px;opacity:.3;"></div>
+        <div class="gap-us" style="width:30.3%;"></div>
+      </div>
+      <div class="gap-count us">112</div>
+      <div style="font-size:.7rem;color:#334155;margin:0 4px">/</div>
+      <div class="gap-count them">370</div>
+    </div>
+  </section>
+
+  <!-- ── 2. ROOT CAUSES ────────────────────────────────────────── -->
+  <section>
+    <h2>2. Root Cause Breakdown</h2>
+    <p>The insight gap comes from three separable problems, not one.</p>
+
+    <div class="delta-table">
+      <div class="delta-row">
+        <div class="delta-cat">🔴 Source diversity</div>
+        <div class="delta-detail">We use only Steam reviews. Sonar pulls from YouTube videos, written articles, and community boards. Each source type has different signal density — a 15-minute YouTube video can yield 30+ extractable insights; a 60-word Steam review yields ~1.</div>
+        <div class="delta-impact hi">Impact: ~40×</div>
+      </div>
+      <div class="delta-row">
+        <div class="delta-cat">🔴 Source volume</div>
+        <div class="delta-detail">We cap at 100 reviews per game. Sonar had 56 distinct source documents for Balatro. Long-form sources (YouTube, articles) are fewer in number but exponentially richer per piece — each one is independently curation-worthy.</div>
+        <div class="delta-impact hi">Impact: ~56×</div>
+      </div>
+      <div class="delta-row">
+        <div class="delta-cat">🟡 Extraction density</div>
+        <div class="delta-detail">Our keyword matcher tags a whole review to one category max. Sonar extracts multiple discrete insights per source — a single article might contribute 8 insights across 5 categories. This is an AI extraction quality problem, not a data access problem.</div>
+        <div class="delta-impact mid">Impact: ~6–8×</div>
+      </div>
+      <div class="delta-row">
+        <div class="delta-cat">🟡 Category resolution</div>
+        <div class="delta-detail">Sonar has 26 categories vs our 8. More categories = more surfaces for insights to land on = higher raw insight count even from the same source material. Their categories include things like Monetization, Player Agency, Replay Value, Social Features — all missed by us.</div>
+        <div class="delta-impact mid">Impact: ~3×</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 3. SOURCE COMPARISON TABLE ───────────────────────────── -->
+  <section>
+    <h2>3. Source-by-Source Breakdown</h2>
+    <p>What each source type provides, what's available for free, and estimated implementation effort.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Source</th>
+          <th>Sonar Uses?</th>
+          <th>We Use?</th>
+          <th>Insights / Source Doc</th>
+          <th>API Access</th>
+          <th>Effort</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Steam Reviews</strong></td>
+          <td>❓ Unconfirmed</td>
+          <td>✅ Yes <span style="color:#4ade80;font-size:.7rem">(100/game)</span></td>
+          <td>~1.1 (AI extraction)</td>
+          <td><span class="badge free">Free, no key</span></td>
+          <td><span class="badge easy">Done</span></td>
+        </tr>
+        <tr>
+          <td><strong>Gaming Press Articles</strong></td>
+          <td>✅ Confirmed</td>
+          <td>✅ Yes <span style="color:#4ade80;font-size:.7rem">(3–5/game)</span></td>
+          <td>5–15 per article</td>
+          <td><span class="badge free">Google Search + scrape</span></td>
+          <td><span class="badge easy">Done</span></td>
+        </tr>
+        <tr>
+          <td><strong>YouTube Videos</strong> (transcripts)</td>
+          <td>✅ Primary source</td>
+          <td>⏸ Disabled</td>
+          <td>10–40 per video</td>
+          <td><span class="badge free">YouTube Data API v3 (free quota)</span></td>
+          <td><span class="badge medium">YT_BLOCKED=True — needs proxy</span></td>
+        </tr>
+        <tr>
+          <td><strong>Reddit</strong> (r/gaming, game-specific)</td>
+          <td>✅ Likely (community boards)</td>
+          <td>❌ Blocked</td>
+          <td>2–8 per thread</td>
+          <td><span class="badge paid">Reddit OAuth — Azure IPs blocked without auth</span></td>
+          <td><span class="badge hard">Blocked on GH Actions</span></td>
+        </tr>
+        <tr>
+          <td><strong>Metacritic User Reviews</strong></td>
+          <td>❓ Unconfirmed</td>
+          <td>❌ No</td>
+          <td>~1 per review (like Steam)</td>
+          <td><span class="badge medium">Scrape only (no API)</span></td>
+          <td><span class="badge medium">Medium</span></td>
+        </tr>
+        <tr>
+          <td><strong>OpenCritic</strong> (critic reviews)</td>
+          <td>❓ Unconfirmed</td>
+          <td>❌ Blocked</td>
+          <td>8–15 per full review</td>
+          <td><span class="badge hard">Now requires API key — was listed as free</span></td>
+          <td><span class="badge hard">Email developers@opencritic.com</span></td>
+        </tr>
+        <tr>
+          <td><strong>Metacritic Critic Reviews</strong></td>
+          <td>❓ Unconfirmed</td>
+          <td>❌ No</td>
+          <td>8–15 per review</td>
+          <td><span class="badge medium">Scrape only</span></td>
+          <td><span class="badge medium">Medium</span></td>
+        </tr>
+        <tr>
+          <td><strong>Steam Discussion Forums</strong></td>
+          <td>❓ Unconfirmed</td>
+          <td>❌ No</td>
+          <td>2–6 per thread</td>
+          <td><span class="badge free">ISteamPublishedFile API (free)</span></td>
+          <td><span class="badge easy">Easy</span></td>
+        </tr>
+        <tr>
+          <td><strong>Twitch/Streaming VODs</strong></td>
+          <td>❓ Unlikely (mentioned videos)</td>
+          <td>❌ No</td>
+          <td>Variable (reaction-heavy)</td>
+          <td><span class="badge paid">Twitch API — free for metadata</span></td>
+          <td><span class="badge hard">Hard (transcription cost)</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── 4. OUR CURRENT SOURCE OUTPUT ─────────────────────────── -->
+  <section>
+    <h2>4. Our Current Output — Top 5 by Category Mentions</h2>
+    <p>With Steam only (1,000 reviews across 10 games), here's how mentions distribute across our 8 categories. Note: these are keyword matches, not discrete insights per Sonar's definition.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Source → Category</th>
+          <th>Total Mentions</th>
+          <th>% of All Matches</th>
+          <th>Gap vs. Sonar Equivalent</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="color:#f1f5f9;font-weight:700">#1</td>
+          <td>Steam Reviews → <strong>Gameplay</strong></td>
+          <td style="color:#4ade80;font-weight:700">532</td>
+          <td>32.4%</td>
+          <td>Well-covered — Sonar's equivalent likely similar</td>
+        </tr>
+        <tr>
+          <td style="color:#f1f5f9;font-weight:700">#2</td>
+          <td>Steam Reviews → <strong>Player Experience</strong></td>
+          <td style="color:#4ade80;font-weight:700">393</td>
+          <td>24.0%</td>
+          <td>Comparable, but emotionally shallow (short text)</td>
+        </tr>
+        <tr>
+          <td style="color:#f1f5f9;font-weight:700">#3</td>
+          <td>Steam Reviews → <strong>Aesthetics</strong></td>
+          <td style="color:#4ade80;font-weight:700">323</td>
+          <td>19.7%</td>
+          <td>YouTube is massively better here (visual reactions)</td>
+        </tr>
+        <tr>
+          <td style="color:#fbbf24;font-weight:700">#4</td>
+          <td>Steam Reviews → <strong>Mechanics</strong></td>
+          <td style="color:#fbbf24;font-weight:700">100</td>
+          <td>6.1%</td>
+          <td>Undercounted — Steam reviews rarely breakdown loops</td>
+        </tr>
+        <tr>
+          <td style="color:#fbbf24;font-weight:700">#5</td>
+          <td>Steam Reviews → <strong>Game & World Systems</strong></td>
+          <td style="color:#fbbf24;font-weight:700">91</td>
+          <td>5.5%</td>
+          <td>Highly undercounted — better in long-form articles</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="warn">⚠ The bottom 3 categories — Accessibility (52), Technical (74), UX-UI (55) — are structurally undercounted from Steam reviews. Players rarely articulate accessibility or UI problems in short-form text. Long-form YouTube and critic reviews cover these substantially better.</div>
+  </section>
+
+  <!-- ── 5. EXPANSION PLAN ─────────────────────────────────────── -->
+  <section>
+    <h2>5. Remaining Expansion Plan — From 112 to 370+ Insights Per Game</h2>
+    <p>Four concrete phases, prioritized by ROI (insight gain per hour of dev work). Fully executable with the existing Python pipeline.</p>
+
+    <div class="phases">
+
+      <div class="phase-card p1">
+        <div class="phase-head">
+          <div class="phase-num">Phase 1 — 2–3 hours</div>
+          <div class="phase-title">Max out Steam + add OpenCritic</div>
+          <div class="phase-meta">Est. insight lift: ~2.5×</div>
+        </div>
+        <div class="phase-desc">
+          The simplest wins: pull 500 reviews per game instead of 100, and add OpenCritic which has a free public API. OpenCritic aggregates full written critic reviews — these are 500–2000 words each and yield 8–15 insights per review vs. ~0.8 from a Steam blurb.
+        </div>
+        <p><strong style="color:#e2e8f0">What to do:</strong></p>
+        <p>1. Change <code style="color:#4ade80;background:#0f1f10;padding:1px 6px;border-radius:4px">max_reviews=100</code> to <code style="color:#4ade80;background:#0f1f10;padding:1px 6px;border-radius:4px">max_reviews=500</code> in <code>analyze.py</code></p>
+        <p>2. Add <code>fetch_opencritic_reviews(game_name)</code> — search <code>opencritic.com/api/game/search?criteria={name}</code>, then fetch reviews at <code>opencritic.com/api/review?game={id}</code>. No API key needed.</p>
+        <p>3. Feed critic review text into the same classify pipeline. Each review is long — let AI extract multiple insights per review.</p>
+        <div class="source-tags">
+          <span class="stag steam">Steam ×500</span>
+          <span class="stag oc">OpenCritic</span>
+        </div>
+      </div>
+
+      <div class="phase-card p2">
+        <div class="phase-head">
+          <div class="phase-num">Phase 2 — 4–6 hours</div>
+          <div class="phase-title">Add YouTube transcripts</div>
+          <div class="phase-meta">Est. insight lift: ~4–6×</div>
+        </div>
+        <div class="phase-desc">
+          This is likely Sonar's primary edge. A 15-minute YouTube video review is ~2,000–3,000 words and touches every dimension of a game. YouTube Data API v3 is free (10,000 units/day default quota). Transcripts are fetchable via the youtube-transcript-api Python library (no key needed).
+        </div>
+        <p><strong style="color:#e2e8f0">What to do:</strong></p>
+        <p>1. <code>pip install youtube-transcript-api google-api-python-client</code></p>
+        <p>2. Search YouTube: <code>f"{game_name} review" site:youtube.com</code> — target video reviews, not "let's play" content. Filter by: duration 8–25 min (full reviews), view count &gt;10k, published within 2 years.</p>
+        <p>3. Fetch auto-captions via youtube-transcript-api. Clean the transcript, chunk into 800-token blocks.</p>
+        <p>4. Run each chunk through Claude with a multi-insight extraction prompt: <em>"Extract all distinct player experience insights from this transcript. For each insight, identify the category, sentiment, and a 1-sentence quote."</em></p>
+        <p>5. Target 5–10 videos per game → 150–400 insights per game from YouTube alone.</p>
+        <div class="source-tags">
+          <span class="stag steam">Steam ×500</span>
+          <span class="stag oc">OpenCritic</span>
+          <span class="stag yt">YouTube (5–10 videos/game)</span>
+        </div>
+      </div>
+
+      <div class="phase-card p3">
+        <div class="phase-head">
+          <div class="phase-num">Phase 3 — 3–4 hours</div>
+          <div class="phase-title">Add Reddit + Steam Discussions</div>
+          <div class="phase-meta">Est. insight lift: ~1.5×</div>
+        </div>
+        <div class="phase-desc">
+          Reddit houses the most in-depth mechanical discussions anywhere — game-specific subreddits often have pinned threads specifically about UX, accessibility, and bugs. Steam Discussions are similarly dense for technical issues. Both are low-cost to add.
+        </div>
+        <p><strong style="color:#e2e8f0">What to do:</strong></p>
+        <p>1. Reddit: use PRAW (Python Reddit API Wrapper). Free tier allows 60 req/min. Search <code>r/{game_subreddit}</code> for top posts tagged "criticism", "feedback", "ux", "accessibility". Also search <code>r/gaming</code> with game name + keywords.</p>
+        <p>2. Steam Discussions: endpoint is <code>https://store.steampowered.com/appreviews/{appid}</code> — Steam's IGetDiscussionList API also available for forum threads (no auth needed for public games).</p>
+        <p>3. Filter threads for signal: sort by upvotes, minimum comment count &gt;5. Each quality thread = 4–8 extractable insights.</p>
+        <div class="source-tags">
+          <span class="stag steam">Steam ×500</span>
+          <span class="stag oc">OpenCritic</span>
+          <span class="stag yt">YouTube</span>
+          <span class="stag reddit">Reddit (r/{game})</span>
+          <span class="stag steam">Steam Discussions</span>
+        </div>
+      </div>
+
+      <div class="phase-card p4">
+        <div class="phase-head">
+          <div class="phase-num">Phase 4 — 2 hours</div>
+          <div class="phase-title">Upgrade to multi-insight extraction</div>
+          <div class="phase-meta">Est. insight lift: ~3× on same data</div>
+        </div>
+        <div class="phase-desc">
+          This is an AI prompt change, not a data change. Currently our classifier assigns one category per review. Sonar extracts multiple discrete insights per source. A single 200-word Steam review can contain observations about gameplay, technical performance, and UI — we're collapsing all that to one label.
+        </div>
+        <p><strong style="color:#e2e8f0">What to do:</strong></p>
+        <p>1. Change the classification prompt from: <em>"Which category does this review primarily discuss?"</em> to: <em>"Extract all distinct insights from this review. For each, return: category, sentiment (positive/negative/mixed), severity (minor/notable/major), and a verbatim quote of 1–2 sentences."</em></p>
+        <p>2. Update the schema from one object per review to a list of insight objects. Update the HTML renderer to aggregate insights per category rather than reviews per category.</p>
+        <p>3. Expected output: 2–4 insights per Steam review, 6–12 per OpenCritic piece, 15–40 per YouTube transcript chunk.</p>
+        <div class="source-tags">
+          <span class="stag steam">All sources</span>
+          <span class="stag yt">Multi-insight extraction</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── 6. PROJECTION ─────────────────────────────────────────── -->
+  <section>
+    <h2>6. Projected Insight Count After Full Expansion</h2>
+
+    <div class="projection">
+      <h3>Projected insights per game after all 4 phases</h3>
+      <div class="proj-grid">
+        <div class="proj-item">
+          <div class="pnum">112</div>
+          <div class="plabel">Current — Mar 2026<br><small style="color:#4ade80;font-size:.65rem">was ~80 (Feb baseline)</small></div>
+        </div>
+        <div class="proj-item">
+          <div class="pnum">~370</div>
+          <div class="plabel">Sprung Sonar benchmark (Balatro)</div>
+        </div>
+        <div class="proj-item">
+          <div class="pnum">~500–800</div>
+          <div class="plabel">Our target (remaining phases)</div>
+        </div>
+      </div>
+    </div>
+
+    <table style="margin-top:20px">
+      <thead>
+        <tr>
+          <th>After Phase</th>
+          <th>Sources Active</th>
+          <th>Estimated Insights/Game</th>
+          <th>Δ vs Current</th>
+          <th>Δ vs Sonar</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Baseline — Mar 2026 ✅</td>
+          <td>Steam ×100 + press articles</td>
+          <td style="color:#4ade80;font-weight:700">112</td>
+          <td style="color:#4ade80">+1.4× vs Feb</td>
+          <td style="color:#f87171">−70%</td>
+        </tr>
+        <tr>
+          <td>Next: Reddit OAuth</td>
+          <td>+ Reddit (GitHub Secret)</td>
+          <td>~145</td>
+          <td style="color:#4ade80">+29%</td>
+          <td style="color:#fbbf24">−61%</td>
+        </tr>
+        <tr>
+          <td>Next: YouTube</td>
+          <td>+ YouTube (5–10 vids/game)</td>
+          <td>~350–450</td>
+          <td style="color:#4ade80">+3–4×</td>
+          <td style="color:#4ade80">≈ parity or above</td>
+        </tr>
+        <tr>
+          <td>Future: OpenCritic</td>
+          <td>+ OpenCritic (API key req.)</td>
+          <td>~400–500</td>
+          <td style="color:#4ade80">+3.6–4.5×</td>
+          <td style="color:#4ade80">+8–35%</td>
+        </tr>
+        <tr>
+          <td>Full build</td>
+          <td>All sources + higher Steam cap</td>
+          <td style="color:#818cf8;font-weight:700">~600–1000</td>
+          <td style="color:#4ade80;font-weight:700">+5–9×</td>
+          <td style="color:#4ade80;font-weight:700">+60–170% vs Sonar</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── 7. QUICK WIN RECOMMENDATIONS ──────────────────────────── -->
+  <section>
+    <h2>7. Recommended Next Steps</h2>
+
+    <div class="callout">
+      ✅ <strong>Biggest remaining win:</strong> YouTube transcripts. This is almost certainly Sonar's primary data source — their emphasis on "videos" is explicit in every press mention. A single 10-minute video review is ~2,000–3,000 words and touches every dimension of a game. Adding 5–10 videos per game would likely close the gap to parity or beyond. <strong>Blocker:</strong> youtube-transcript-api returns empty results on GitHub Actions; needs a self-hosted proxy or the /youtube-scrape skill.
+    </div>
+
+    <div class="callout">
+      ✅ <strong>Easy win:</strong> Reddit OAuth credentials as GitHub Secret. Reddit HTTP 403s are caused by GitHub Actions' Azure IP range being blocked. Adding a Reddit app client ID/secret as secrets would restore ~30 additional insights per game at no API cost.
+    </div>
+
+    <div class="warn">
+      ⚠ <strong>OpenCritic is no longer "free public":</strong> The API now returns <code>{"message":"API key is required. Email developers@opencritic.com"}</code>. This was documented as a free public API in the original plan — that's no longer the case. Contact them for a key, or pivot to scraping Metacritic critic reviews directly.
+    </div>
+
+    <div class="warn">
+      ⚠ <strong>Press score caveat:</strong> Our press scores consistently run 10–15 points higher than Metacritic for well-reviewed games (Balatro 100% vs MC 90, Outer Wilds 100% vs MC 85). This is because our 3–5 article sample skews toward positive coverage. A larger, more diverse article sample — especially including mixed/negative reviews — would improve calibration.
+    </div>
+  </section>
+
+</div>
+
+<footer>Gap Analysis v2 · Competitive Prototype Examination · Updated Mar 1, 2026 · <a href="sonar-comparison.html" style="color:#4f46e5">→ Full 10-Game Comparison</a></footer>
+
+</body>
+</html>

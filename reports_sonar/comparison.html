@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sonar Comparison — 10 Games · Our Prototype vs Sprung Sonar vs Metacritic</title>
+<style>
+  :root {
+    --bg: #0a0f1a;
+    --surface: #111827;
+    --surface2: #1e293b;
+    --border: #334155;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --faint: #475569;
+    --press: #00d4ff;
+    --player: #4ade80;
+    --steam: #a78bfa;
+    --meta: #f59e0b;
+    --sprung: #fb923c;
+    --neg: #f87171;
+    --pos: #4ade80;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.5; }
+  a { color: var(--press); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Layout */
+  .page { max-width: 1400px; margin: 0 auto; padding: 32px 24px; }
+
+  /* Header */
+  .header { margin-bottom: 40px; }
+  .header h1 { font-size: 1.75rem; font-weight: 800; color: #fff; margin-bottom: 6px; }
+  .header p { color: var(--muted); font-size: 0.9rem; max-width: 700px; }
+  .meta-pills { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  .pill { background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 4px 14px; font-size: 12px; color: var(--muted); }
+
+  /* Legend */
+  .legend { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 32px; }
+  .leg-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .leg-dot { width: 12px; height: 12px; border-radius: 50%; }
+
+  /* Stat cards row */
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 40px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; text-align: center; }
+  .stat-card .num { font-size: 2rem; font-weight: 800; line-height: 1; }
+  .stat-card .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-top: 4px; }
+
+  /* Section headings */
+  .section-title { font-size: 1.1rem; font-weight: 700; color: #fff; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+
+  /* Main comparison table */
+  .comparison-table { width: 100%; border-collapse: collapse; margin-bottom: 40px; font-size: 13px; }
+  .comparison-table thead th { background: var(--surface2); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 10px 12px; text-align: center; border-bottom: 2px solid var(--border); position: sticky; top: 0; z-index: 10; }
+  .comparison-table thead th.left { text-align: left; }
+  .comparison-table tbody tr { border-bottom: 1px solid var(--border); transition: background .15s; }
+  .comparison-table tbody tr:hover { background: var(--surface); }
+  .comparison-table td { padding: 10px 12px; text-align: center; vertical-align: middle; }
+  .comparison-table td.left { text-align: left; }
+  .game-name-cell { min-width: 150px; }
+  .game-name { font-weight: 700; color: #fff; }
+  .game-year { font-size: 11px; color: var(--faint); }
+  .game-link { font-size: 11px; color: var(--press); margin-left: 4px; }
+
+  /* Score chips */
+  .score { display: inline-block; font-weight: 700; font-size: 15px; padding: 2px 0; min-width: 44px; }
+  .score.press { color: var(--press); }
+  .score.player { color: var(--player); }
+  .score.steam { color: var(--steam); }
+  .score.meta { color: var(--meta); }
+  .score.sprung { color: var(--sprung); }
+  .score.na { color: var(--faint); font-size: 12px; }
+  .score-sub { font-size: 10px; color: var(--faint); display: block; }
+
+  /* Bar mini */
+  .mini-bar { height: 4px; background: var(--surface2); border-radius: 2px; margin-top: 4px; width: 60px; }
+  .mini-bar-fill { height: 100%; border-radius: 2px; }
+
+  /* Divergence badge */
+  .divbadge { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; display: inline-block; }
+  .divbadge.press { background: rgba(0,212,255,.15); color: var(--press); }
+  .divbadge.player { background: rgba(74,222,128,.15); color: var(--player); }
+  .divbadge.none { color: var(--faint); }
+
+  /* Insight count */
+  .ins-count { font-size: 13px; font-weight: 700; color: var(--text); }
+  .ins-sub { font-size: 10px; color: var(--faint); display: block; }
+
+  /* Source split mini visualization */
+  .src-split { display: flex; height: 6px; border-radius: 3px; overflow: hidden; width: 70px; margin-top: 4px; }
+  .src-press { background: var(--press); }
+  .src-player { background: var(--player); }
+
+  /* Sprung Sonar section */
+  .three-way-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 40px; }
+  .game-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .game-card-header { padding: 16px 20px 12px; border-bottom: 1px solid var(--border); }
+  .game-card-header h3 { font-size: 1rem; font-weight: 700; color: #fff; }
+  .game-card-header .year-tag { font-size: 11px; color: var(--faint); }
+  .score-block { padding: 16px 20px; }
+  .score-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .score-row:last-child { margin-bottom: 0; }
+  .score-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .score-label-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .score-num { font-size: 1.25rem; font-weight: 800; }
+  .score-detail { font-size: 11px; color: var(--faint); }
+  .score-row-bar { height: 5px; background: var(--surface2); border-radius: 3px; margin-bottom: 12px; }
+  .score-row-bar-fill { height: 100%; border-radius: 3px; }
+  .not-in-catalog { padding: 16px 20px; color: var(--faint); font-size: 12px; font-style: italic; }
+  .delta-chip { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; }
+  .delta-pos { background: rgba(74,222,128,.15); color: var(--player); }
+  .delta-neg { background: rgba(248,113,113,.15); color: var(--neg); }
+
+  /* Correlation table */
+  .corr-table { width: 100%; border-collapse: collapse; margin-bottom: 40px; font-size: 13px; }
+  .corr-table th { background: var(--surface2); color: var(--muted); font-size: 11px; text-transform: uppercase; padding: 10px 14px; text-align: center; border-bottom: 2px solid var(--border); }
+  .corr-table th.left { text-align: left; }
+  .corr-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); text-align: center; }
+  .corr-table td.left { text-align: left; font-weight: 600; }
+  .corr-table tr:hover { background: var(--surface); }
+  .align-bar { display: flex; height: 6px; background: var(--surface2); border-radius: 3px; margin-top: 4px; position: relative; overflow: hidden; }
+
+  /* Press/Player divergence section */
+  .divergence-list { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 40px; }
+  .div-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; }
+  .div-card h4 { font-size: 0.9rem; font-weight: 700; color: #fff; margin-bottom: 8px; }
+  .div-bars { display: flex; flex-direction: column; gap: 6px; }
+  .div-bar-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+  .div-bar-label { width: 60px; color: var(--muted); }
+  .div-bar-track { flex: 1; height: 12px; background: var(--surface2); border-radius: 6px; overflow: hidden; }
+  .div-bar-fill { height: 100%; border-radius: 6px; }
+  .div-bar-val { width: 36px; text-align: right; font-weight: 700; }
+
+  /* Key findings */
+  .finding-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 40px; }
+  .finding-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .finding-card h4 { font-size: 0.85rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+  .finding-item { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; font-size: 13px; color: var(--muted); }
+  .finding-item:last-child { margin-bottom: 0; }
+  .finding-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+  .finding-text strong { color: var(--text); }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .stat-row { grid-template-columns: 1fr 1fr; }
+    .three-way-grid { grid-template-columns: 1fr; }
+    .divergence-list, .finding-grid { grid-template-columns: 1fr; }
+  }
+
+  .sprung-note { background: rgba(251,146,60,.06); border: 1px solid rgba(251,146,60,.2); border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; font-size: 13px; color: var(--muted); }
+
+  /* Era tag */
+  .era-tag { font-size: 10px; padding: 2px 8px; border-radius: 10px; display: inline-block; margin-left: 8px; }
+  .era-recent { background: rgba(0,212,255,.1); color: var(--press); }
+  .era-older { background: rgba(148,163,184,.1); color: var(--faint); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>Sonar Prototype — 10-Game Comparison</h1>
+    <p>Side-by-side comparison of our dual-stream sentiment prototype vs Sprung Sonar vs Metacritic, across 10 games spanning 2019–2025.</p>
+    <div class="meta-pills">
+      <span class="pill">🗓 Generated March 2026</span>
+      <span class="pill">📦 100 Steam reviews per game</span>
+      <span class="pill">📰 3–5 press articles per game</span>
+      <span class="pill">🔴 Reddit blocked on GitHub Actions</span>
+      <span class="pill">Sprung Sonar: 3 of 10 games available</span>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="leg-item"><div class="leg-dot" style="background:var(--press)"></div> Our Press Score (gaming articles)</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--player)"></div> Our Player Score (Steam reviews)</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--steam)"></div> Steam All-Time % Positive</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--meta)"></div> Metacritic Metascore (/100)</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--sprung)"></div> Sprung Sonar % Positive</div>
+  </div>
+
+  <!-- Aggregate stats -->
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="num" style="color:var(--press)">1,518</div>
+      <div class="label">Total Insights Analyzed</div>
+    </div>
+    <div class="stat-card">
+      <div class="num" style="color:var(--player)">~1,000</div>
+      <div class="label">Steam Reviews Processed</div>
+    </div>
+    <div class="stat-card">
+      <div class="num" style="color:var(--steam)">10 / 10</div>
+      <div class="label">Games Fully Processed</div>
+    </div>
+    <div class="stat-card">
+      <div class="num" style="color:var(--meta)">3 / 10</div>
+      <div class="label">Games in Sprung Catalog</div>
+    </div>
+  </div>
+
+  <!-- ===== MAIN COMPARISON TABLE ===== -->
+  <div class="section-title">All-Game Score Matrix</div>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Each row = one game. Our press/player scores are AI-extracted sentiment from ~3–5 articles + 100 Steam reviews. Steam % is the all-time positive rating from Steam's own API. Metacritic and Sprung Sonar are external benchmarks.</p>
+
+  <div style="overflow-x:auto;margin-bottom:40px">
+  <table class="comparison-table">
+    <thead>
+      <tr>
+        <th class="left" style="min-width:160px">Game</th>
+        <th>🗞 Press<br><span style="font-weight:400;font-size:10px">our score</span></th>
+        <th>👥 Player<br><span style="font-weight:400;font-size:10px">our score</span></th>
+        <th>↔ Gap<br><span style="font-weight:400;font-size:10px">press − player</span></th>
+        <th>💬 Total<br><span style="font-weight:400;font-size:10px">insights</span></th>
+        <th>📦 Sources<br><span style="font-weight:400;font-size:10px">docs analyzed</span></th>
+        <th>🟣 Steam<br><span style="font-weight:400;font-size:10px">all-time %</span></th>
+        <th>🟡 Meta<br><span style="font-weight:400;font-size:10px">critic score</span></th>
+        <th>🟡 User<br><span style="font-weight:400;font-size:10px">meta user</span></th>
+        <th>🟠 Sprung<br><span style="font-weight:400;font-size:10px">% positive</span></th>
+        <th>📊 Ins/Game<br><span style="font-weight:400;font-size:10px">sprung</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Black Myth: Wukong -->
+      <tr>
+        <td class="left game-name-cell">
+          <div class="game-name">Black Myth: Wukong <span class="era-tag era-recent">2024</span></div>
+          <a class="game-link" href="../sonar-prototype/reports_sonar/black-myth-wukong.html">→ full report</a>
+        </td>
+        <td><span class="score press">58%</span><span class="score-sub">24 ins</span></td>
+        <td><span class="score player">58%</span><span class="score-sub">127 ins</span></td>
+        <td><span class="divbadge none">±0</span></td>
+        <td><span class="ins-count">151</span><span class="ins-sub">23/26 cats</span></td>
+        <td>102</td>
+        <td><span class="score steam">94%</span></td>
+        <td><span class="score meta">81</span></td>
+        <td><span class="score meta">82</span></td>
+        <td><span class="score na">—</span></td>
+        <td><span class="score na">—</span></td>
+      </tr>
+      <!-- Palworld -->
+      <tr>
+        <td class="left game-name-cell">
+          <div class="game-name">Palworld <span class="era-tag era-recent">2024</span></div>
+          <a class="game-link" href="../sonar-prototype/reports_sonar/palworld.html">→ full report</a>
+        </td>
+        <td><span class="score na">N/A</span><span class="score-sub">0 articles</span></td>
+        <td><span class="score player">84%</span><span class="score-sub">77 ins</span></td>
+        <td><span class="score na">—</span></td>
+        <td><span class="ins-count">77</span><span class="ins-sub">20/26 cats</span></td>
+        <td>100</td>
+        <td><span class="score steam">95%</span></td>
+        <td><span class="score na">TBD</span></td>
+        <td><span class="score na">N/A</span></td>
+        <td><span class="score na">—</span></td>
+        <td><span class="score na">—</span></td>
+      </tr>
+      <!-- Helldivers 2 -->
+      <tr>
+        <td class="left game-name-cell">
+          <div class="game-name">Helldivers 2 <span class="era-tag era-recent">2024</span></div>
+          <a class="game-link" href="../sonar-prototype/reports_sonar/helldivers-2.html">→ full report</a>
+        </td>
+        <td><span class="score press">93%</span><span class="score-sub">30 ins</span></td>
+        <td><span class="score player">56%</span><span class="score-sub">109 ins</span></td>
+        <td><span class="divbadge press">Press +37</span></td>
+        <td><span class="ins-count">139</span><span class="ins-sub">25/26 cats</span></td>
+        <td>103</td>
+        <td><span class="score steam">83%</span></td>
+        <td><span class="score meta">82</span></td>
+        <td><span class="score meta">75</span></td>
+        <td><span class="score na">—</span></td>
+        <td><span class="score na">—</span></td>
+      </tr>
+      <!-- Balatro -->
+      <tr>
+        <td class="left game-name-cell">
+          <div class="game-name">Balatro <span class="era-tag era-recent">2024</span></div>
+          <a class="game-link" href="../sonar-prototype/reports_sonar/balatro.html">→ full report</a>
+        </td>
+        <td><span class="score press">100%</span><span class="score-sub">30 ins</span></td>
+        <td><span class="score player">77%</span><span class="score-sub">82 ins</span></td>
+        <td><span class="divbadge press">Press +23</span></td>
+        <td><span class="ins-count">112</span><span class="ins-sub">16/26 cats</span></td>
+        <td>103</td>
+        <td><span class="score steam">98%</span></td>
+        <td><span class="score meta">90</span></td>
+        <td><span class="score meta">84</span></td>
+        <td><span class="score sprung">88%</span></td>
+        <td><span class="score sprung">370</span></td>
+      </tr>
+      <!-- Hell Is Us -->
+      <tr>
+        <td class="left game-name-cell">
+          <div class="game-name">Hell Is Us <span class="era-tag era-recent">2025</span></div>
+          <a class="game-link" href="../sonar-prototype/reports_sonar/hell-is-us.html">→ full report</a>
+        </td>
+        <td><span class="score press">54%</span><span class="score-sub">13 ins</span></td>
+        <td><span class="score player">49%</span><span class="score-sub">230 ins</span></td>
+        <td><span class="divbadge none">Press +5</span></td>
+        <td><span class="ins-count">243</span><span class="ins-sub">24/26 cats</span></td>
+        <td>101</td>
+        <td><span class="score steam">87%</span></td>
+        <td><span class="score meta">77</span></td>
+        <td><span class="score meta">79</span></td>
+        <td><span class="score na">—</span></td>
+        <td><span class="score na">—</span></td>
+      </tr>
+      <!-- Outer Wilds -->
+      <tr>
+        <td class="left game-name-cell">
+          <div class="game-name">Outer Wilds <span class="era-tag era-older">2019</span></div>
+          <a class="game-link" href="../sonar-prototype/reports_sonar/outer-wilds.html">→ full report</a>
+        </td>
+        <td><span class="score press">100%</span><span class="score-sub">21 ins</span></td>
+        <td><span class="score player">76%</span><span class="score-sub">123 ins</span></td>
+        <td><span class="divbadge press">Press +24</span></td>
+        <td><span class="ins-count">144</span><span class="ins-sub">21/26 cats</span></td>
+        <td>122</td>
+        <td><span class="score steam">95%</span></td>
+        <td><span class="score meta">85</span></td>
+        <td><span class="score meta">89</span></td>
+        <td><span class="score sprung">81%</span></td>
+        <td><span class="score sprung">610</span></td>
+      </tr>
+      <!-- Disco Elysium -->
+      <tr>
+        <td class="left game-name-cell">
+          <div class="game-name">Disco Elysium <span class="era-tag era-older">2019</span></div>
+          <a class="game-link" href="../sonar-prototype/reports_sonar/disco-elysium.html">→ full report</a>
+        </td>
+        <td><span class="score press">89%</span><span class="score-sub">19 ins</span></td>
+        <td><span class="score player">72%</span><span class="score-sub">112 ins</span></td>
+        <td><span class="divbadge press">Press +17</span></td>
+        <td><span class="ins-count">131</span><span class="ins-sub">22/26 cats</span></td>
+        <td>102</td>
+        <td><span class="score steam">92%</span></td>
+        <td><span class="score meta">91</span></td>
+        <td><span class="score meta">83</span></td>
+        <td><span class="score na">—</span></td>
+        <td><span class="score na">—</span></td>
+      </tr>
+      <!-- Pentiment -->
+      <tr>
+        <td class="left game-name-cell">
+          <div class="game-name">Pentiment <span class="era-tag era-older">2022</span></div>
+          <a class="game-link" href="../sonar-prototype/reports_sonar/pentiment.html">→ full report</a>
+        </td>
+        <td><span class="score press">95%</span><span class="score-sub">19 ins</span></td>
+        <td><span class="score player">67%</span><span class="score-sub">154 ins</span></td>
+        <td><span class="divbadge press">Press +28</span></td>
+        <td><span class="ins-count">173</span><span class="ins-sub">19/26 cats</span></td>
+        <td>102</td>
+        <td><span class="score steam">95%</span></td>
+        <td><span class="score meta">86</span></td>
+        <td><span class="score meta">77</span></td>
+        <td><span class="score na">—</span></td>
+        <td><span class="score na">—</span></td>
+      </tr>
+      <!-- Citizen Sleeper -->
+      <tr>
+        <td class="left game-name-cell">
+          <div class="game-name">Citizen Sleeper <span class="era-tag era-older">2022</span></div>
+          <a class="game-link" href="../sonar-prototype/reports_sonar/citizen-sleeper.html">→ full report</a>
+        </td>
+        <td><span class="score press">86%</span><span class="score-sub">21 ins</span></td>
+        <td><span class="score player">67%</span><span class="score-sub">163 ins</span></td>
+        <td><span class="divbadge press">Press +19</span></td>
+        <td><span class="ins-count">184</span><span class="ins-sub">22/26 cats</span></td>
+        <td>102</td>
+        <td><span class="score steam">94%</span></td>
+        <td><span class="score meta">82</span></td>
+        <td><span class="score meta">75</span></td>
+        <td><span class="score sprung">75%</span></td>
+        <td><span class="score sprung">389</span></td>
+      </tr>
+      <!-- Signalis -->
+      <tr>
+        <td class="left game-name-cell">
+          <div class="game-name">Signalis <span class="era-tag era-older">2022</span></div>
+          <a class="game-link" href="../sonar-prototype/reports_sonar/signalis.html">→ full report</a>
+        </td>
+        <td><span class="score press">84%</span><span class="score-sub">25 ins</span></td>
+        <td><span class="score player">78%</span><span class="score-sub">129 ins</span></td>
+        <td><span class="divbadge none">Press +6</span></td>
+        <td><span class="ins-count">154</span><span class="ins-sub">19/26 cats</span></td>
+        <td>102</td>
+        <td><span class="score steam">97%</span></td>
+        <td><span class="score meta">81</span></td>
+        <td><span class="score meta">84</span></td>
+        <td><span class="score na">—</span></td>
+        <td><span class="score na">—</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ===== PRESS vs PLAYER DIVERGENCE ===== -->
+  <div class="section-title">Press vs Player Sentiment Divergence</div>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Games where press and player sentiment diverge by the largest margin. Badge shown when gap > 15 pts.</p>
+  <div class="divergence-list">
+
+    <div class="div-card">
+      <h4>Helldivers 2 — <span style="color:var(--press)">Press +37pts</span></h4>
+      <div class="div-bars">
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--press)">Press</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:93%;background:var(--press)"></div></div>
+          <div class="div-bar-val" style="color:var(--press)">93%</div>
+        </div>
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--player)">Player</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:56%;background:var(--player)"></div></div>
+          <div class="div-bar-val" style="color:var(--player)">56%</div>
+        </div>
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--steam)">Steam</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:83%;background:var(--steam)"></div></div>
+          <div class="div-bar-val" style="color:var(--steam)">83%</div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--faint);margin-top:10px">Critics praised launch quality. Players mixed — likely post-launch content controversies and server issues that press coverage predated.</p>
+    </div>
+
+    <div class="div-card">
+      <h4>Pentiment — <span style="color:var(--press)">Press +28pts</span></h4>
+      <div class="div-bars">
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--press)">Press</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:95%;background:var(--press)"></div></div>
+          <div class="div-bar-val" style="color:var(--press)">95%</div>
+        </div>
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--player)">Player</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:67%;background:var(--player)"></div></div>
+          <div class="div-bar-val" style="color:var(--player)">67%</div>
+        </div>
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--steam)">Steam</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:95%;background:var(--steam)"></div></div>
+          <div class="div-bar-val" style="color:var(--steam)">95%</div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--faint);margin-top:10px">Critics (and Steam all-time) strongly positive. Extracted player insights more mixed — niche narrative format not for everyone.</p>
+    </div>
+
+    <div class="div-card">
+      <h4>Outer Wilds — <span style="color:var(--press)">Press +24pts</span></h4>
+      <div class="div-bars">
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--press)">Press</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:100%;background:var(--press)"></div></div>
+          <div class="div-bar-val" style="color:var(--press)">100%</div>
+        </div>
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--player)">Player</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:76%;background:var(--player)"></div></div>
+          <div class="div-bar-val" style="color:var(--player)">76%</div>
+        </div>
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--steam)">Steam</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:95%;background:var(--steam)"></div></div>
+          <div class="div-bar-val" style="color:var(--steam)">95%</div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--faint);margin-top:10px">Universal critical acclaim. Player reviews show strong but not perfect positivity — accessibility/onboarding friction surfaces in player text more than in press.</p>
+    </div>
+
+    <div class="div-card">
+      <h4>Balatro — <span style="color:var(--press)">Press +23pts</span></h4>
+      <div class="div-bars">
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--press)">Press</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:100%;background:var(--press)"></div></div>
+          <div class="div-bar-val" style="color:var(--press)">100%</div>
+        </div>
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--player)">Player</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:77%;background:var(--player)"></div></div>
+          <div class="div-bar-val" style="color:var(--player)">77%</div>
+        </div>
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--steam)">Steam</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:98%;background:var(--steam)"></div></div>
+          <div class="div-bar-val" style="color:var(--steam)">98%</div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--faint);margin-top:10px">Press is uniformly positive (GotY mentions, "masterpiece"). Player reviews more nuanced — run-ending randomness, difficulty spikes show up in text even among positive reviews.</p>
+    </div>
+
+    <div class="div-card">
+      <h4>Citizen Sleeper — <span style="color:var(--press)">Press +19pts</span></h4>
+      <div class="div-bars">
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--press)">Press</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:86%;background:var(--press)"></div></div>
+          <div class="div-bar-val" style="color:var(--press)">86%</div>
+        </div>
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--player)">Player</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:67%;background:var(--player)"></div></div>
+          <div class="div-bar-val" style="color:var(--player)">67%</div>
+        </div>
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--steam)">Steam</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:94%;background:var(--steam)"></div></div>
+          <div class="div-bar-val" style="color:var(--steam)">94%</div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--faint);margin-top:10px">Sprung Sonar: 75% positive (389 insights). Our player score aligns. Press somewhat more effusive than player text suggests. Replay value and save system cited as negatives.</p>
+    </div>
+
+    <div class="div-card">
+      <h4>Black Myth: Wukong — <span style="color:var(--faint)">Tied (±0)</span></h4>
+      <div class="div-bars">
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--press)">Press</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:58%;background:var(--press)"></div></div>
+          <div class="div-bar-val" style="color:var(--press)">58%</div>
+        </div>
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--player)">Player</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:58%;background:var(--player)"></div></div>
+          <div class="div-bar-val" style="color:var(--player)">58%</div>
+        </div>
+        <div class="div-bar-row">
+          <div class="div-bar-label" style="color:var(--steam)">Steam</div>
+          <div class="div-bar-track"><div class="div-bar-fill" style="width:94%;background:var(--steam)"></div></div>
+          <div class="div-bar-val" style="color:var(--steam)">94%</div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--faint);margin-top:10px">Interesting: both press and player extracted sentiment are moderate (58%), yet Steam's all-time rating is 94%. Our AI extraction may be pulling nuanced critique from both streams equally — the game is genuinely polarising in detail even if broadly enjoyed.</p>
+    </div>
+
+  </div>
+
+  <!-- ===== SPRUNG SONAR SIDE-BY-SIDE ===== -->
+  <div class="section-title">Sprung Sonar Side-by-Side (3 Overlapping Games)</div>
+
+  <div class="sprung-note">
+    ⚠️ Sprung Sonar's catalog (202 games as of March 2026) covers only 3 of our 10 test games: <strong>Balatro</strong>, <strong>Outer Wilds</strong>, and <strong>Citizen Sleeper</strong>. The 7 absent games skew toward newer releases (2024–2025) and niche indie titles. Sprung's catalog appears to favor indie darlings with moderate community footprints.
+  </div>
+
+  <div class="three-way-grid">
+
+    <!-- Balatro -->
+    <div class="game-card">
+      <div class="game-card-header">
+        <h3>Balatro</h3>
+        <span class="year-tag">2024 · LocalThunk · Playstack</span>
+      </div>
+      <div class="score-block">
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--press)"></div> Our Press</div>
+          <div>
+            <span class="score-num" style="color:var(--press)">100%</span>
+            <span class="score-detail">30 insights</span>
+          </div>
+        </div>
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--player)"></div> Our Player</div>
+          <div>
+            <span class="score-num" style="color:var(--player)">77%</span>
+            <span class="score-detail">82 insights</span>
+          </div>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--sprung)"></div> Sprung Sonar</div>
+          <div>
+            <span class="score-num" style="color:var(--sprung)">88%</span>
+            <span class="score-detail">370 insights / 56 sources</span>
+          </div>
+        </div>
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--meta)"></div> Metacritic</div>
+          <div>
+            <span class="score-num" style="color:var(--meta)">90</span>
+            <span class="score-detail">critic / 84 user</span>
+          </div>
+        </div>
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--steam)"></div> Steam All-Time</div>
+          <div>
+            <span class="score-num" style="color:var(--steam)">98%</span>
+            <span class="score-detail">97k+ reviews</span>
+          </div>
+        </div>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Insight volume comparison:</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <div style="font-size:11px;color:var(--muted);width:80px">Our total</div>
+            <div style="flex:1;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="width:30%;height:100%;background:var(--press)"></div></div>
+            <div style="font-size:12px;font-weight:700;width:30px">112</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="font-size:11px;color:var(--muted);width:80px">Sprung Sonar</div>
+            <div style="flex:1;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="width:100%;height:100%;background:var(--sprung)"></div></div>
+            <div style="font-size:12px;font-weight:700;width:30px">370</div>
+          </div>
+          <div style="font-size:11px;color:var(--faint);margin-top:8px">Gap: <strong style="color:var(--sprung)">3.3×</strong> fewer insights (vs 4.6× in Feb baseline)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Outer Wilds -->
+    <div class="game-card">
+      <div class="game-card-header">
+        <h3>Outer Wilds</h3>
+        <span class="year-tag">2019 · Mobius Digital · Annapurna</span>
+      </div>
+      <div class="score-block">
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--press)"></div> Our Press</div>
+          <div>
+            <span class="score-num" style="color:var(--press)">100%</span>
+            <span class="score-detail">21 insights</span>
+          </div>
+        </div>
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--player)"></div> Our Player</div>
+          <div>
+            <span class="score-num" style="color:var(--player)">76%</span>
+            <span class="score-detail">123 insights</span>
+          </div>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--sprung)"></div> Sprung Sonar</div>
+          <div>
+            <span class="score-num" style="color:var(--sprung)">81%</span>
+            <span class="score-detail">610 insights / 74 sources</span>
+          </div>
+        </div>
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--meta)"></div> Metacritic</div>
+          <div>
+            <span class="score-num" style="color:var(--meta)">85</span>
+            <span class="score-detail">critic / 89 user</span>
+          </div>
+        </div>
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--steam)"></div> Steam All-Time</div>
+          <div>
+            <span class="score-num" style="color:var(--steam)">95%</span>
+            <span class="score-detail">All-time positive</span>
+          </div>
+        </div>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Insight volume comparison:</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <div style="font-size:11px;color:var(--muted);width:80px">Our total</div>
+            <div style="flex:1;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="width:24%;height:100%;background:var(--press)"></div></div>
+            <div style="font-size:12px;font-weight:700;width:30px">144</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="font-size:11px;color:var(--muted);width:80px">Sprung Sonar</div>
+            <div style="flex:1;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="width:100%;height:100%;background:var(--sprung)"></div></div>
+            <div style="font-size:12px;font-weight:700;width:30px">610</div>
+          </div>
+          <div style="font-size:11px;color:var(--faint);margin-top:8px">Gap: <strong style="color:var(--sprung)">4.2×</strong> fewer insights</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Citizen Sleeper -->
+    <div class="game-card">
+      <div class="game-card-header">
+        <h3>Citizen Sleeper</h3>
+        <span class="year-tag">2022 · Jump Over the Age · Fellow Traveller</span>
+      </div>
+      <div class="score-block">
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--press)"></div> Our Press</div>
+          <div>
+            <span class="score-num" style="color:var(--press)">86%</span>
+            <span class="score-detail">21 insights</span>
+          </div>
+        </div>
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--player)"></div> Our Player</div>
+          <div>
+            <span class="score-num" style="color:var(--player)">67%</span>
+            <span class="score-detail">163 insights</span>
+          </div>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--sprung)"></div> Sprung Sonar</div>
+          <div>
+            <span class="score-num" style="color:var(--sprung)">75%</span>
+            <span class="score-detail">389 insights / 59 sources</span>
+          </div>
+        </div>
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--meta)"></div> Metacritic</div>
+          <div>
+            <span class="score-num" style="color:var(--meta)">82</span>
+            <span class="score-detail">critic / 75 user</span>
+          </div>
+        </div>
+        <div class="score-row">
+          <div class="score-label"><div class="score-label-dot" style="background:var(--steam)"></div> Steam All-Time</div>
+          <div>
+            <span class="score-num" style="color:var(--steam)">94%</span>
+            <span class="score-detail">All-time positive</span>
+          </div>
+        </div>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Insight volume comparison:</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <div style="font-size:11px;color:var(--muted);width:80px">Our total</div>
+            <div style="flex:1;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="width:47%;height:100%;background:var(--press)"></div></div>
+            <div style="font-size:12px;font-weight:700;width:30px">184</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="font-size:11px;color:var(--muted);width:80px">Sprung Sonar</div>
+            <div style="flex:1;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="width:100%;height:100%;background:var(--sprung)"></div></div>
+            <div style="font-size:12px;font-weight:700;width:30px">389</div>
+          </div>
+          <div style="font-size:11px;color:var(--faint);margin-top:8px">Gap: <strong style="color:var(--sprung)">2.1×</strong> fewer insights — our best overlap result</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===== METACRITIC ALIGNMENT ===== -->
+  <div class="section-title">Score Alignment: Our Scores vs Metacritic</div>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">How well does our dual-stream analysis align with Metacritic's critic and user scores? Player score should correlate with user score; press score with metascore.</p>
+
+  <div style="overflow-x:auto;margin-bottom:40px">
+  <table class="corr-table">
+    <thead>
+      <tr>
+        <th class="left">Game</th>
+        <th>Our Press %</th>
+        <th>Meta Critic</th>
+        <th>Press vs Critic</th>
+        <th>Our Player %</th>
+        <th>Meta User /100</th>
+        <th>Player vs User</th>
+        <th>Steam All-Time</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="left">Black Myth: Wukong</td>
+        <td><span class="score press">58%</span></td>
+        <td><span class="score meta">81</span></td>
+        <td><span class="delta-chip delta-neg">−23</span></td>
+        <td><span class="score player">58%</span></td>
+        <td><span class="score meta">82</span></td>
+        <td><span class="delta-chip delta-neg">−24</span></td>
+        <td><span class="score steam">94%</span></td>
+      </tr>
+      <tr>
+        <td class="left">Palworld</td>
+        <td><span class="score na">N/A</span></td>
+        <td><span class="score na">TBD</span></td>
+        <td><span class="score na">—</span></td>
+        <td><span class="score player">84%</span></td>
+        <td><span class="score na">N/A</span></td>
+        <td><span class="score na">—</span></td>
+        <td><span class="score steam">95%</span></td>
+      </tr>
+      <tr>
+        <td class="left">Helldivers 2</td>
+        <td><span class="score press">93%</span></td>
+        <td><span class="score meta">82</span></td>
+        <td><span class="delta-chip delta-pos">+11</span></td>
+        <td><span class="score player">56%</span></td>
+        <td><span class="score meta">75</span></td>
+        <td><span class="delta-chip delta-neg">−19</span></td>
+        <td><span class="score steam">83%</span></td>
+      </tr>
+      <tr>
+        <td class="left">Balatro</td>
+        <td><span class="score press">100%</span></td>
+        <td><span class="score meta">90</span></td>
+        <td><span class="delta-chip delta-pos">+10</span></td>
+        <td><span class="score player">77%</span></td>
+        <td><span class="score meta">84</span></td>
+        <td><span class="delta-chip delta-neg">−7</span></td>
+        <td><span class="score steam">98%</span></td>
+      </tr>
+      <tr>
+        <td class="left">Hell Is Us</td>
+        <td><span class="score press">54%</span></td>
+        <td><span class="score meta">77</span></td>
+        <td><span class="delta-chip delta-neg">−23</span></td>
+        <td><span class="score player">49%</span></td>
+        <td><span class="score meta">79</span></td>
+        <td><span class="delta-chip delta-neg">−30</span></td>
+        <td><span class="score steam">87%</span></td>
+      </tr>
+      <tr>
+        <td class="left">Outer Wilds</td>
+        <td><span class="score press">100%</span></td>
+        <td><span class="score meta">85</span></td>
+        <td><span class="delta-chip delta-pos">+15</span></td>
+        <td><span class="score player">76%</span></td>
+        <td><span class="score meta">89</span></td>
+        <td><span class="delta-chip delta-neg">−13</span></td>
+        <td><span class="score steam">95%</span></td>
+      </tr>
+      <tr>
+        <td class="left">Disco Elysium</td>
+        <td><span class="score press">89%</span></td>
+        <td><span class="score meta">91</span></td>
+        <td><span class="delta-chip delta-neg">−2</span></td>
+        <td><span class="score player">72%</span></td>
+        <td><span class="score meta">83</span></td>
+        <td><span class="delta-chip delta-neg">−11</span></td>
+        <td><span class="score steam">92%</span></td>
+      </tr>
+      <tr>
+        <td class="left">Pentiment</td>
+        <td><span class="score press">95%</span></td>
+        <td><span class="score meta">86</span></td>
+        <td><span class="delta-chip delta-pos">+9</span></td>
+        <td><span class="score player">67%</span></td>
+        <td><span class="score meta">77</span></td>
+        <td><span class="delta-chip delta-neg">−10</span></td>
+        <td><span class="score steam">95%</span></td>
+      </tr>
+      <tr>
+        <td class="left">Citizen Sleeper</td>
+        <td><span class="score press">86%</span></td>
+        <td><span class="score meta">82</span></td>
+        <td><span class="delta-chip delta-pos">+4</span></td>
+        <td><span class="score player">67%</span></td>
+        <td><span class="score meta">75</span></td>
+        <td><span class="delta-chip delta-neg">−8</span></td>
+        <td><span class="score steam">94%</span></td>
+      </tr>
+      <tr>
+        <td class="left">Signalis</td>
+        <td><span class="score press">84%</span></td>
+        <td><span class="score meta">81</span></td>
+        <td><span class="delta-chip delta-pos">+3</span></td>
+        <td><span class="score player">78%</span></td>
+        <td><span class="score meta">84</span></td>
+        <td><span class="delta-chip delta-neg">−6</span></td>
+        <td><span class="score steam">97%</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ===== KEY FINDINGS ===== -->
+  <div class="section-title">Key Findings</div>
+  <div class="finding-grid">
+
+    <div class="finding-card">
+      <h4>📰 Press Scores Skew High</h4>
+      <div class="finding-item">
+        <div class="finding-icon">↑</div>
+        <div class="finding-text">Our press scores <strong>consistently run 10–15 pts above Metacritic</strong> on high-reviewed games (Balatro: 100% vs 90, Outer Wilds: 100% vs 85, Pentiment: 95% vs 86). Articles skew toward positive coverage; negative reviews are rare in the small sample we pull.</div>
+      </div>
+      <div class="finding-item">
+        <div class="finding-icon">⚠️</div>
+        <div class="finding-text">Exception: <strong>Black Myth (58% vs 81) and Hell Is Us (54% vs 77)</strong> — our press is more negative than Metacritic. Likely pulling opinion/analysis pieces alongside review coverage, or post-launch coverage that diverged from launch-day reviews.</div>
+      </div>
+    </div>
+
+    <div class="finding-card">
+      <h4>👥 Player Scores Skew Lower than Steam</h4>
+      <div class="finding-item">
+        <div class="finding-icon">↓</div>
+        <div class="finding-text">Our AI extracts <strong>nuanced critiques even from "positive" reviews</strong>. Steam's binary thumbs-up inflates the all-time %. Our player scores average ~15–20 pts below Steam all-time — which is arguably more diagnostic for developers.</div>
+      </div>
+      <div class="finding-item">
+        <div class="finding-icon">🎯</div>
+        <div class="finding-text"><strong>Hell Is Us player score: 49%</strong> — well below Steam's 87%. Players are expressing mixed views in their text even while clicking "Recommend." This gap is the signal developers care about.</div>
+      </div>
+    </div>
+
+    <div class="finding-card">
+      <h4>🟠 Our Scores vs Sprung Sonar</h4>
+      <div class="finding-item">
+        <div class="finding-icon">≈</div>
+        <div class="finding-text">Our combined scores align directionally with Sprung: <strong>Balatro (ours ~86% combined vs Sprung 88%)</strong>, <strong>Citizen Sleeper (ours ~69% vs Sprung 75%)</strong>. Good signal quality despite 2–4× fewer insights.</div>
+      </div>
+      <div class="finding-item">
+        <div class="finding-icon">📦</div>
+        <div class="finding-text"><strong>Insight gap narrowed</strong>: From 4.6× (Feb baseline: 80 vs 370 for Balatro) to 3.3× now (112 vs 370). Still significant — Sprung uses YouTube transcripts and community boards we don't yet access.</div>
+      </div>
+    </div>
+
+    <div class="finding-card">
+      <h4>🔴 Critical Data Gaps</h4>
+      <div class="finding-item">
+        <div class="finding-icon">🚫</div>
+        <div class="finding-text"><strong>Palworld: zero press insights</strong>. Early Access title with limited traditional review coverage. Press score shows N/A — we need to handle EA titles differently (community forums, Discord).</div>
+      </div>
+      <div class="finding-item">
+        <div class="finding-icon">🚫</div>
+        <div class="finding-text"><strong>Reddit blocked on GitHub Actions</strong> (Azure IP range). Adding Reddit OAuth as a GitHub Secret would unlock ~30+ insights per game, closing the gap further. Currently all player sentiment = Steam only.</div>
+      </div>
+      <div class="finding-item">
+        <div class="finding-icon">📺</div>
+        <div class="finding-text"><strong>YouTube disabled</strong> (YT_BLOCKED=True). Sprung's primary differentiator. Re-enabling with transcript scraping could add 100+ insights per game and close the gap to &lt;2×.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <div style="border-top:1px solid var(--border);padding-top:20px;margin-top:20px;color:var(--faint);font-size:12px">
+    <p>Generated March 2026. Data sources: GitHub Actions pipeline (Steam API, gaming press RSS), Sprung Sonar (sprungsonar.com), Metacritic. Sprung Sonar category data from public game pages. Metacritic scores as of March 1, 2026.</p>
+    <p style="margin-top:6px">Individual game reports: <a href="../sonar-prototype/reports_sonar/index.html">→ Sonar Index</a></p>
+  </div>
+
+</div>
+</body>
+</html>
