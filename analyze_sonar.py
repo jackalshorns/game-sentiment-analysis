@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Sonar-Equivalent Pipeline — Replicating Sprung's Methodology
-Sources: YouTube transcripts + Gaming press articles + Reddit community boards
-(Deliberately NO Steam reviews — matching Sonar's implied approach)
-Categories: 26 (matching Sonar's framework)
-Display: "N insights from M sources" — matching Sonar UI
+Sonar Dual-Stream Pipeline
+Press stream:  Gaming press articles + OpenCritic critic reviews (+ YouTube when re-enabled)
+Player stream: Steam reviews + Reddit community boards
+Output:        Per-game HTML with Press Score, Player Score, OpenCritic reference + 26-category dual bars
 
 Usage:
     python3 analyze_sonar.py
@@ -36,7 +35,6 @@ except ImportError:
 API_KEY   = os.environ.get("ANTHROPIC_API_KEY") or sys.exit("Error: ANTHROPIC_API_KEY environment variable is not set.\n  Set it with: export ANTHROPIC_API_KEY=sk-ant-...")
 USE_AI    = "--no-ai" not in sys.argv
 SOLO_GAME = next((sys.argv[sys.argv.index("--game")+1] for i,a in enumerate(sys.argv) if a=="--game"), None) if "--game" in sys.argv else None
-# --transcripts-dir: path to pre-fetched transcript cache from youtube-scrape skill
 TRANSCRIPTS_DIR = Path(sys.argv[sys.argv.index("--transcripts-dir")+1]) if "--transcripts-dir" in sys.argv else None
 
 client  = anthropic.Anthropic(api_key=API_KEY)
@@ -112,7 +110,7 @@ Rules:
 - Minimum 1, maximum 20 insights per call
 - Return ONLY a valid JSON array, no commentary"""
 
-def ai_extract(text: str, source_label: str) -> list:
+def ai_extract(text: str, source_label: str, stream: str = "press") -> list:
     if not text.strip() or len(text.split()) < 30:
         return []
     words = text.split()
@@ -132,13 +130,14 @@ def ai_extract(text: str, source_label: str) -> list:
             for item in items:
                 if isinstance(item,dict) and item.get("cat") in CAT_KEYS:
                     item["source"] = source_label
+                    item["stream"] = stream
                     valid.append(item)
             return valid
     except Exception as e:
         print(f"    AI error: {e}")
     return []
 
-def kw_extract(text: str, source_label: str) -> list:
+def kw_extract(text: str, source_label: str, stream: str = "press") -> list:
     """Keyword fallback — maps sentences to 26 categories."""
     KW26 = {
         "gameplay":         ["gameplay","game feel","core loop","fun","mechanic","play"],
@@ -179,11 +178,11 @@ def kw_extract(text: str, source_label: str) -> list:
                 pos = sum(1 for w in pos_w if w in sl)
                 neg = sum(1 for w in neg_w if w in sl)
                 sent_s = "positive" if pos>neg else ("negative" if neg>pos else "mixed")
-                insights.append({"cat":cat,"sentiment":sent_s,"severity":"minor","quote":sent.strip()[:220],"source":source_label})
+                insights.append({"cat":cat,"sentiment":sent_s,"severity":"minor","quote":sent.strip()[:220],"source":source_label,"stream":stream})
                 break
     return insights
 
-def extract_long(text: str, source_label: str) -> list:
+def extract_long(text: str, source_label: str, stream: str = "press") -> list:
     """Chunk long text and extract from each chunk."""
     if not text.strip():
         return []
@@ -193,15 +192,15 @@ def extract_long(text: str, source_label: str) -> list:
     chunks = [" ".join(words[i:i+chunk_sz]) for i in range(0, len(words), chunk_sz)]
     fn = ai_extract if USE_AI else kw_extract
     for i, chunk in enumerate(chunks[:5]):
-        ins = fn(chunk, source_label)
+        ins = fn(chunk, source_label, stream)
         all_ins.extend(ins)
         if USE_AI:
             time.sleep(0.3)
     return all_ins
 
-def extract_short(text: str, source_label: str) -> list:
+def extract_short(text: str, source_label: str, stream: str = "press") -> list:
     fn = ai_extract if USE_AI else kw_extract
-    return fn(text, source_label)
+    return fn(text, source_label, stream)
 
 # ── YouTube ───────────────────────────────────────────────────────────────────
 def load_cached_transcripts(slug: str) -> list:
@@ -305,7 +304,6 @@ def fetch_press_articles(game_name: str, n: int = 5) -> list:
             r = requests.get(f"https://html.duckduckgo.com/html/?q={q}",
                              headers=PRESS_HEADERS, timeout=12)
             if r.status_code == 200:
-                # DuckDuckGo HTML encodes actual URLs as uddg= params
                 raw_enc = re.findall(r'uddg=(https?[^&"]+)', r.text)
                 ddg_urls = [urllib.parse.unquote(u) for u in raw_enc]
                 press_urls = []
@@ -338,13 +336,96 @@ def fetch_press_articles(game_name: str, n: int = 5) -> list:
     print(f"  ▶ Press articles: {len(articles)} fetched")
     return articles[:n]
 
-# ── Reddit ────────────────────────────────────────────────────────────────────
+# ── OpenCritic ────────────────────────────────────────────────────────────────
+OC_HEADERS = {
+    "User-Agent": "Mozilla/5.0 GameSentimentResearcher/1.0 (uxisfine.com)",
+    "Accept": "application/json",
+}
+
+def fetch_opencritic(game_name: str, n: int = 10) -> dict:
+    """Fetch critic reviews from OpenCritic (free public API, no key required).
+    Returns: {reviews, percent_recommended, top_critic_score}
+    """
+    try:
+        # Step 1: Search for game
+        r = requests.get("https://api.opencritic.com/api/game/search",
+                         params={"criteria": game_name},
+                         headers=OC_HEADERS, timeout=10)
+        if r.status_code != 200:
+            print(f"    OpenCritic search failed: HTTP {r.status_code}")
+            return {}
+        results = r.json()
+        if not results:
+            print(f"    OpenCritic: no match for '{game_name}'")
+            return {}
+        game = results[0]
+        game_id       = game.get("id")
+        pct_rec       = game.get("percentRecommended")
+        top_score     = game.get("topCriticScore")
+
+        # Step 2: Fetch individual reviews
+        time.sleep(0.5)
+        r2 = requests.get("https://api.opencritic.com/api/review",
+                          params={"game": game_id, "take": n},
+                          headers=OC_HEADERS, timeout=10)
+        if r2.status_code != 200:
+            print(f"    OpenCritic reviews failed: HTTP {r2.status_code}")
+            return {"percent_recommended": pct_rec, "top_critic_score": top_score, "reviews": []}
+
+        reviews_raw = r2.json()
+        reviews = []
+        for rev in reviews_raw:
+            snippet = rev.get("snippet", "")
+            outlet  = ""
+            if isinstance(rev.get("Outlet"), dict):
+                outlet = rev["Outlet"].get("name", "")
+            if snippet and len(snippet.strip()) > 30:
+                reviews.append({"text": snippet.strip(), "outlet": outlet})
+
+        print(f"  ▶ OpenCritic: {len(reviews)} reviews · {pct_rec}% recommended · top score {top_score}")
+        return {
+            "reviews":             reviews,
+            "percent_recommended": pct_rec,
+            "top_critic_score":    top_score,
+        }
+    except Exception as e:
+        print(f"    OpenCritic error: {e}")
+        return {}
+
+# ── Steam Reviews (player stream) ─────────────────────────────────────────────
+def fetch_steam_reviews(appid: int, max_r: int = 100) -> list:
+    """Fetch recent Steam reviews. Capped at 100 to stay within Actions timeout."""
+    reviews, cursor = [], "*"
+    while len(reviews) < max_r:
+        try:
+            r = requests.get(f"https://store.steampowered.com/appreviews/{appid}",
+                             params={"json":1,"language":"english","filter":"recent",
+                                     "num_per_page":100,"cursor":cursor},
+                             headers={"User-Agent":"Mozilla/5.0"}, timeout=15)
+            data = r.json()
+            batch = data.get("reviews", [])
+            if not batch:
+                break
+            reviews += [b["review"] for b in batch if b.get("review","").strip()]
+            cursor = data.get("cursor", "*")
+            if cursor == "*" or not data.get("query_summary",{}).get("num_reviews"):
+                break
+            time.sleep(0.4)
+        except Exception as e:
+            print(f"    Steam error: {e}")
+            break
+    return reviews[:max_r]
+
+# ── Reddit (player stream) ────────────────────────────────────────────────────
 def fetch_reddit(subreddit: str, game_name: str, n: int = 12) -> list:
+    """Fetch posts from game subreddit + r/games + r/gaming (broader player signal)."""
     posts = []
+    game_q = quote(game_name)
     urls = [
         f"https://www.reddit.com/r/{subreddit}/top.json?t=year&limit={n}",
         f"https://www.reddit.com/r/{subreddit}/search.json?q=review+feedback+thoughts&sort=top&t=year&limit=8",
-        f"https://www.reddit.com/r/patientgamers/search.json?q={quote(game_name)}&sort=top&t=all&limit=5",
+        f"https://www.reddit.com/r/games/search.json?q={game_q}&sort=top&t=year&limit=5",
+        f"https://www.reddit.com/r/gaming/search.json?q={game_q}&sort=top&t=year&limit=5",
     ]
     seen = set()
     for url in urls:
@@ -355,7 +436,7 @@ def fetch_reddit(subreddit: str, game_name: str, n: int = 12) -> list:
                     d = c["data"]
                     title = d.get("title","")
                     text  = (d.get("selftext","") or "").strip()
-                    if title not in seen and (len(text) > 100 or len(title) > 40):
+                    if title not in seen and (len(text) > 50 or len(title) > 40):
                         seen.add(title)
                         posts.append({
                             "title": title,
@@ -366,7 +447,7 @@ def fetch_reddit(subreddit: str, game_name: str, n: int = 12) -> list:
         except Exception as e:
             print(f"    Reddit error: {e}")
     posts.sort(key=lambda x: x["score"], reverse=True)
-    print(f"  ▶ Reddit: {min(len(posts),n)} posts from r/{subreddit}")
+    print(f"  ▶ Reddit: {min(len(posts),n)} posts (r/{subreddit} + r/games + r/gaming)")
     return posts[:n]
 
 # ── Aggregate ─────────────────────────────────────────────────────────────────
@@ -377,83 +458,225 @@ def aggregate(insights: list) -> dict:
         if cat not in agg:
             continue
         s = ins.get("sentiment","mixed")
-        if s == "positive": agg[cat]["pos"] += 1
-        elif s == "negative": agg[cat]["neg"] += 1
-        else: agg[cat]["mixed"] += 1
-        if ins.get("severity") == "major": agg[cat]["major"] += 1
+        if s == "positive":   agg[cat]["pos"]   += 1
+        elif s == "negative": agg[cat]["neg"]   += 1
+        else:                 agg[cat]["mixed"] += 1
+        if ins.get("severity") == "major":
+            agg[cat]["major"] += 1
         q = ins.get("quote","").strip()
         if q and len(agg[cat]["quotes"]) < 3:
-            agg[cat]["quotes"].append({"text":q[:220],"sentiment":s})
+            agg[cat]["quotes"].append({
+                "text":      q[:220],
+                "sentiment": s,
+                "stream":    ins.get("stream","press"),
+            })
     return agg
+
+def pct_from_agg(agg: dict) -> int:
+    """Compute overall positive % from an aggregate dict."""
+    tot_p = sum(a["pos"]+a["mixed"] for a in agg.values())
+    tot_n = sum(a["neg"] for a in agg.values())
+    tot   = tot_p + tot_n
+    return round(tot_p/tot*100) if tot else 0
+
+def aggregate_by_stream(insights: list) -> dict:
+    """Partition insights by stream, aggregate each partition separately."""
+    press_ins  = [i for i in insights if i.get("stream") == "press"]
+    player_ins = [i for i in insights if i.get("stream") == "player"]
+    return {
+        "press":        aggregate(press_ins),
+        "player":       aggregate(player_ins),
+        "combined":     aggregate(insights),
+        "press_count":  len(press_ins),
+        "player_count": len(player_ins),
+    }
+
+# ── Steam Metadata ────────────────────────────────────────────────────────────
+def get_steam_info(appid: int) -> dict:
+    try:
+        r = requests.get("https://store.steampowered.com/api/appdetails",
+                         params={"appids":appid,"l":"english"}, timeout=10)
+        d = r.json().get(str(appid),{})
+        if d.get("success"):
+            dd = d["data"]
+            return {
+                "name":         dd.get("name",""),
+                "developer":    ", ".join(dd.get("developers",[])),
+                "release_date": dd.get("release_date",{}).get("date",""),
+                "header_image": dd.get("header_image",""),
+                "genres":       [g["description"] for g in dd.get("genres",[])],
+            }
+    except:
+        pass
+    return {}
 
 # ── HTML ──────────────────────────────────────────────────────────────────────
 def color(pct):
-    if pct>=75: return "#00d4ff"
-    if pct>=50: return "#fbbf24"
+    if pct >= 75: return "#00d4ff"
+    if pct >= 50: return "#fbbf24"
     return "#f87171"
 
-def gauge(pct,c):
-    t=math.pi*80; f=(pct/100)*t
-    return f"""<svg width="200" height="110" viewBox="0 0 200 110">
-  <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#1e293b" stroke-width="18" stroke-linecap="round"/>
-  <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="{c}" stroke-width="18" stroke-linecap="round" stroke-dasharray="{f:.1f} {t:.1f}"/>
-  <text x="100" y="88" text-anchor="middle" font-size="34" font-weight="800" fill="#fff" font-family="system-ui">{pct}%</text>
-  <text x="100" y="107" text-anchor="middle" font-size="11" fill="#64748b" font-family="system-ui">Positive</text>
-</svg>"""
+def score_panel(emoji, label, pct_val, clr, subtitle="", note=""):
+    """Render one score panel (press, player, or reference)."""
+    if isinstance(pct_val, int):
+        display = f"{pct_val}%"
+        bar = f'<div style="height:4px;background:#1e293b;border-radius:2px;margin-top:8px"><div style="width:{pct_val}%;height:100%;background:{clr};border-radius:2px"></div></div>'
+    else:
+        display = pct_val or "—"
+        bar = ""
+    sub_html  = f'<div style="font-size:10px;color:#64748b;margin-top:4px">{subtitle}</div>' if subtitle else ""
+    note_html = f'<div style="font-size:10px;color:#475569;margin-top:4px">{note}</div>'      if note    else ""
+    return (
+        f'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:16px;text-align:center">'
+        f'<div style="font-size:18px;margin-bottom:4px">{emoji}</div>'
+        f'<div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#475569;margin-bottom:6px">{label}</div>'
+        f'<div style="font-size:2rem;font-weight:800;color:{clr};line-height:1">{display}</div>'
+        f'{sub_html}{bar}{note_html}</div>'
+    )
 
-def render_game(game, info, all_ins, agg, src_summary):
-    name    = info.get("name", game["name"])
-    dev     = info.get("developer","Unknown")
-    rel     = info.get("release_date", str(game["year"]))
-    img     = info.get("header_image","")
-    n_ins   = len(all_ins)
-    n_src   = src_summary["total_sources"]
+def render_game(game, info, all_ins, streams, src_summary, scores):
+    name   = info.get("name", game["name"])
+    dev    = info.get("developer","Unknown")
+    rel    = info.get("release_date", str(game["year"]))
+    n_ins  = len(all_ins)
+    n_src  = src_summary["total_sources"]
 
-    tot_p   = sum(a["pos"]+a["mixed"] for a in agg.values())
-    tot_n   = sum(a["neg"] for a in agg.values())
-    tot     = tot_p + tot_n
-    pct     = round(tot_p/tot*100) if tot else 0
-    c       = color(pct)
-    label   = "Overwhelmingly Positive" if pct>=90 else "Very Positive" if pct>=80 else "Mostly Positive" if pct>=70 else "Mixed" if pct>=50 else "Negative"
+    press_pct    = scores.get("press_pct", 0)
+    player_pct   = scores.get("player_pct", 0)
+    combined_pct = scores.get("combined_pct", 0)
+    oc_pct       = scores.get("opencritic_pct")
+    oc_score     = scores.get("top_critic_score")
+    press_count  = streams.get("press_count", 0)
+    player_count = streams.get("player_count", 0)
 
-    # Only show categories that have data, sorted by total mentions
-    active_cats = [(k,v) for k,v in agg.items() if v["pos"]+v["neg"]+v["mixed"]>0]
+    press_c    = color(press_pct)
+    player_c   = "#4ade80"  # green for player
+    oc_c       = "#a78bfa"  # purple for reference
+    combined_c = color(combined_pct)
+
+    label = ("Overwhelmingly Positive" if combined_pct>=90 else
+             "Very Positive"           if combined_pct>=80 else
+             "Mostly Positive"         if combined_pct>=70 else
+             "Mixed"                   if combined_pct>=50 else "Negative")
+
+    oc_note   = f"Top critic score: {oc_score}" if oc_score else ""
+    oc_display = oc_pct if isinstance(oc_pct, int) else None  # None → score_panel shows "—"
+
+    panels_html = (
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px">'
+        + score_panel("🗞️", "Press Score",   press_pct,  press_c,  f"{press_count} insights",  "articles + OpenCritic")
+        + score_panel("👥", "Player Score",  player_pct, player_c, f"{player_count} insights", "Steam + Reddit")
+        + score_panel("📊", "Reference",     oc_display, oc_c,     "OpenCritic % rec.",         oc_note)
+        + '</div>'
+    )
+
+    summary_html = (
+        f'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:16px;margin-bottom:16px;text-align:center">'
+        f'<div style="font-size:1rem;font-weight:700;color:#f1f5f9">{label}</div>'
+        f'<div style="color:#64748b;font-size:13px;margin:6px 0">'
+        f'<strong style="color:#818cf8;font-size:1.3rem">{n_ins}</strong> total insights from '
+        f'<strong style="color:#818cf8">{n_src}</strong> sources</div>'
+        f'<div style="display:flex;align-items:center;gap:8px;margin-top:10px">'
+        f'<span style="font-size:11px;color:#64748b;white-space:nowrap">{combined_pct}% combined</span>'
+        f'<div style="flex:1;height:8px;background:#1e293b;border-radius:4px;overflow:hidden">'
+        f'<div style="width:{combined_pct}%;height:100%;background:{combined_c};border-radius:4px"></div>'
+        f'</div></div></div>'
+    )
+
+    # Per-category blocks with dual bars
+    agg_press    = streams["press"]
+    agg_player   = streams["player"]
+    agg_combined = streams["combined"]
+
+    active_cats = [(k,v) for k,v in agg_combined.items() if v["pos"]+v["neg"]+v["mixed"]>0]
     active_cats.sort(key=lambda x: x[1]["pos"]+x[1]["neg"]+x[1]["mixed"], reverse=True)
 
     cats_html = ""
-    for k, a in active_cats:
-        t = a["pos"]+a["neg"]+a["mixed"]
-        pp = round((a["pos"]+a["mixed"])/t*100) if t else 0
-        qhtml = ""
-        for q in a["quotes"][:2]:
-            qc = "#4ade80" if q["sentiment"]=="positive" else "#f87171" if q["sentiment"]=="negative" else "#fbbf24"
-            qhtml += f'<div style="font-size:11px;color:#94a3b8;border-left:2px solid {qc};padding-left:8px;margin:5px 0;font-style:italic">&ldquo;{q["text"]}&rdquo;</div>'
-        major_badge = f'<span style="font-size:9px;color:#f87171;background:#1f0a0a;border:1px solid #7f1d1d;padding:1px 5px;border-radius:8px;margin-left:6px">{a["major"]} major</span>' if a["major"]>0 else ""
-        cats_html += f"""<div style="padding:14px 0;border-bottom:1px solid #1e293b">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-    <span style="font-weight:700;color:#cbd5e1;font-size:.88rem">{CAT_NAMES[k]}{major_badge}</span>
-    <span style="font-size:11px;color:#334155">{t} insights</span>
-  </div>
-  <div style="display:flex;align-items:center;gap:8px">
-    <div style="flex:1;height:8px;background:#1e293b;border-radius:4px;overflow:hidden">
-      <div style="width:{pp}%;height:100%;background:{c};border-radius:4px"></div>
-    </div>
-    <span style="font-size:11px;color:#64748b;width:36px;text-align:right">{pp}%</span>
-  </div>
-  <div style="font-size:10px;color:#475569;margin-top:3px">{a["pos"]} positive · {a["neg"]} negative · {a["mixed"]} mixed</div>
-  {qhtml}
-</div>"""
+    for k, a_comb in active_cats:
+        t = a_comb["pos"]+a_comb["neg"]+a_comb["mixed"]
 
+        # Press numbers
+        a_p  = agg_press[k]
+        pt   = a_p["pos"]+a_p["neg"]+a_p["mixed"]
+        p_pct = round((a_p["pos"]+a_p["mixed"])/pt*100) if pt else None
+
+        # Player numbers
+        a_pl  = agg_player[k]
+        plt   = a_pl["pos"]+a_pl["neg"]+a_pl["mixed"]
+        pl_pct = round((a_pl["pos"]+a_pl["mixed"])/plt*100) if plt else None
+
+        # Divergence badge (gap > 15 pts)
+        div_badge = ""
+        if p_pct is not None and pl_pct is not None and abs(p_pct - pl_pct) > 15:
+            diff = p_pct - pl_pct
+            if diff > 0:
+                div_badge = f'<span style="font-size:9px;color:#60a5fa;background:#0a1628;border:1px solid #1e3a5f;padding:1px 5px;border-radius:8px;margin-left:6px">Press +{diff}pts</span>'
+            else:
+                div_badge = f'<span style="font-size:9px;color:#4ade80;background:#071e1a;border:1px solid #14532d;padding:1px 5px;border-radius:8px;margin-left:6px">Players +{-diff}pts</span>'
+
+        major_badge = (f'<span style="font-size:9px;color:#f87171;background:#1f0a0a;border:1px solid #7f1d1d;'
+                       f'padding:1px 5px;border-radius:8px;margin-left:6px">{a_comb["major"]} major</span>'
+                       if a_comb["major"] > 0 else "")
+
+        if pt > 0:
+            press_bar = (
+                f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">'
+                f'<span style="font-size:9px;color:#60a5fa;width:44px;text-align:right">🗞️ {p_pct}%</span>'
+                f'<div style="flex:1;height:6px;background:#1e293b;border-radius:3px;overflow:hidden">'
+                f'<div style="width:{p_pct}%;height:100%;background:#3b82f6;border-radius:3px"></div></div>'
+                f'<span style="font-size:9px;color:#475569;width:36px">{pt} ins.</span></div>'
+            )
+        else:
+            press_bar = '<div style="font-size:9px;color:#334155;margin-bottom:3px;padding-left:4px">🗞️ No press data</div>'
+
+        if plt > 0:
+            player_bar = (
+                f'<div style="display:flex;align-items:center;gap:6px">'
+                f'<span style="font-size:9px;color:#4ade80;width:44px;text-align:right">👥 {pl_pct}%</span>'
+                f'<div style="flex:1;height:6px;background:#1e293b;border-radius:3px;overflow:hidden">'
+                f'<div style="width:{pl_pct}%;height:100%;background:#22c55e;border-radius:3px"></div></div>'
+                f'<span style="font-size:9px;color:#475569;width:36px">{plt} ins.</span></div>'
+            )
+        else:
+            player_bar = '<div style="font-size:9px;color:#334155;padding-left:4px">👥 No player data</div>'
+
+        qhtml = ""
+        for q in a_comb.get("quotes", [])[:2]:
+            qc = "#4ade80" if q["sentiment"]=="positive" else "#f87171" if q["sentiment"]=="negative" else "#fbbf24"
+            stag = "🗞️" if q.get("stream") == "press" else "👥"
+            qhtml += (f'<div style="font-size:11px;color:#94a3b8;border-left:2px solid {qc};'
+                      f'padding-left:8px;margin:5px 0;font-style:italic">{stag} &ldquo;{q["text"]}&rdquo;</div>')
+
+        cats_html += (
+            f'<div style="padding:14px 0;border-bottom:1px solid #1e293b">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+            f'<span style="font-weight:700;color:#cbd5e1;font-size:.88rem">{CAT_NAMES[k]}{div_badge}{major_badge}</span>'
+            f'<span style="font-size:11px;color:#334155">{t} total</span></div>'
+            f'{press_bar}{player_bar}{qhtml}</div>'
+        )
+
+    # Source breakdown
     src_html = ""
     for s in src_summary["breakdown"]:
-        src_html += f'<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:#94a3b8;font-size:12px">{s["type"]}</span><span style="font-size:12px;color:#64748b">{s["count"]} docs · {s["insights"]} insights</span></div>'
+        stream_val = s.get("stream", "")
+        if stream_val == "press":
+            badge = '<span style="font-size:9px;color:#60a5fa;background:#0a1628;border:1px solid #1e3a5f;padding:1px 5px;border-radius:8px;margin-left:4px">press</span>'
+        elif stream_val == "player":
+            badge = '<span style="font-size:9px;color:#4ade80;background:#071e1a;border:1px solid #14532d;padding:1px 5px;border-radius:8px;margin-left:4px">player</span>'
+        else:
+            badge = ""
+        src_html += (
+            f'<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">'
+            f'<span style="color:#94a3b8;font-size:12px">{s["type"]}{badge}</span>'
+            f'<span style="font-size:12px;color:#64748b">{s["count"]} docs · {s["insights"]} insights</span></div>'
+        )
 
     cats_covered = len(active_cats)
     method = "AI (Claude Haiku)" if USE_AI else "KEYWORD fallback"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>{name} — Sonar-Equivalent Analysis</title>
+<head><meta charset="UTF-8"><title>{name} — Dual-Stream Sonar</title>
 <style>*{{box-sizing:border-box;margin:0;padding:0}}body{{font-family:system-ui,-apple-system,sans-serif;background:#0a0f1a;color:#e2e8f0;line-height:1.6}}.c{{max-width:800px;margin:0 auto;padding:32px 20px 60px}}</style>
 </head>
 <body><div class="c">
@@ -461,20 +684,8 @@ def render_game(game, info, all_ins, agg, src_summary):
   <h1 style="font-size:1.6rem;font-weight:800;color:#f1f5f9;margin:16px 0 4px">{name}</h1>
   <div style="color:#64748b;font-size:13px;margin-bottom:20px">{dev} · {rel}</div>
 
-  <div style="display:grid;grid-template-columns:180px 1fr;gap:16px;background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:20px;margin-bottom:20px;align-items:center">
-    {gauge(pct,c)}
-    <div>
-      <div style="font-size:1.1rem;font-weight:700;color:#f1f5f9">{label}</div>
-      <div style="color:#64748b;font-size:13px;margin:8px 0">
-        <strong style="color:#818cf8;font-size:1.4rem">{n_ins}</strong> insights from
-        <strong style="color:#818cf8">{n_src}</strong> sources
-      </div>
-      <div style="font-size:11px;color:#475569">{cats_covered} of 26 categories · {tot_p} positive · {tot_n} negative signals</div>
-      <div style="margin-top:8px;font-size:10px;background:#0a1628;border:1px solid #1e3a5f;border-radius:6px;padding:6px 10px;color:#60a5fa">
-        Sonar-equivalent methodology: YouTube + Press + Reddit · No Steam
-      </div>
-    </div>
-  </div>
+  {panels_html}
+  {summary_html}
 
   <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px;margin-bottom:16px">
     <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#475569;margin-bottom:10px">Sources Used</div>
@@ -485,169 +696,217 @@ def render_game(game, info, all_ins, agg, src_summary):
     <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#475569;margin-bottom:4px">
       26-Category Analysis <span style="font-weight:400;text-transform:none;letter-spacing:0">(showing {cats_covered} with data)</span>
     </div>
+    <div style="font-size:10px;color:#475569;margin-bottom:12px">🗞️ Blue = Press · 👥 Green = Player · Badge = divergence &gt;15 pts</div>
     {cats_html}
   </div>
 
   <div style="text-align:center;color:#334155;font-size:11px;margin-top:20px">
-    Generated {datetime.now().strftime('%B %d, %Y')} · Sonar-Equivalent · YouTube + Press Articles + Reddit · {method}
+    Generated {datetime.now().strftime('%B %d, %Y')} · Press: articles + OpenCritic · Player: Steam + Reddit · {method}
   </div>
 </div></body></html>"""
 
 def render_index(results: list) -> str:
-    cards=""
-    for r in sorted(results, key=lambda x:x["pct"], reverse=True):
-        c=color(r["pct"])
-        cards+=f"""<a href="{r['slug']}.html" style="display:block;background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:18px;text-decoration:none;color:inherit">
-  <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-    <div><div style="font-weight:700;color:#f1f5f9">{r['name']}</div><div style="font-size:11px;color:#475569">{r['dev']} · {r['era']}</div></div>
-    <span style="font-size:10px;background:#0a1628;color:#60a5fa;border:1px solid #1e3a5f;padding:2px 8px;border-radius:10px;align-self:flex-start">Sonar-equiv</span>
-  </div>
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-    <div style="font-size:1.5rem;font-weight:800;color:{c}">{r['pct']}%</div>
-    <div style="flex:1;height:6px;background:#1e293b;border-radius:3px"><div style="width:{r['pct']}%;height:100%;background:{c};border-radius:3px"></div></div>
-  </div>
-  <div style="font-size:11px;color:#475569"><strong style="color:#818cf8">{r['n_insights']}</strong> insights from <strong style="color:#818cf8">{r['n_sources']}</strong> sources · {r['cats_covered']} categories</div>
-</a>"""
+    cards = ""
+    for r in sorted(results, key=lambda x: x["combined_pct"], reverse=True):
+        pp  = r["press_pct"]
+        plp = r["player_pct"]
+        ocp = r["opencritic_pct"]
+        oc_str = f'{ocp}%' if isinstance(ocp, int) else '—'
+        cards += (
+            f'<a href="{r["slug"]}.html" style="display:block;background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:18px;text-decoration:none;color:inherit">'
+            f'<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
+            f'<div><div style="font-weight:700;color:#f1f5f9">{r["name"]}</div>'
+            f'<div style="font-size:11px;color:#475569">{r["dev"]} · {r["era"]}</div></div>'
+            f'<span style="font-size:10px;background:#0a1628;color:#60a5fa;border:1px solid #1e3a5f;padding:2px 8px;border-radius:10px;align-self:flex-start">Dual-stream</span></div>'
+            f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">'
+            f'<div style="text-align:center"><div style="font-size:1.2rem;font-weight:800;color:{color(pp)}">{pp}%</div><div style="font-size:9px;color:#475569">🗞️ Press</div></div>'
+            f'<div style="text-align:center"><div style="font-size:1.2rem;font-weight:800;color:#4ade80">{plp}%</div><div style="font-size:9px;color:#475569">👥 Players</div></div>'
+            f'<div style="text-align:center"><div style="font-size:1.2rem;font-weight:800;color:#a78bfa">{oc_str}</div><div style="font-size:9px;color:#475569">📊 OpenCritic</div></div>'
+            f'</div>'
+            f'<div style="font-size:11px;color:#475569"><strong style="color:#818cf8">{r["n_insights"]}</strong> insights from <strong style="color:#818cf8">{r["n_sources"]}</strong> sources · {r["cats_covered"]} categories</div>'
+            f'</a>'
+        )
 
-    avg = round(sum(r["pct"] for r in results)/len(results)) if results else 0
+    avg = round(sum(r["combined_pct"] for r in results) / len(results)) if results else 0
     tot = sum(r["n_insights"] for r in results)
+
     return f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><title>Sonar-Equivalent — 10 Games</title>
+<html lang="en"><head><meta charset="UTF-8"><title>Sonar Dual-Stream — 10 Games</title>
 <style>*{{box-sizing:border-box;margin:0;padding:0}}body{{font-family:system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0}}
 .hero{{background:linear-gradient(135deg,#0a0f1a,#0d0b1a);padding:40px 24px 32px;text-align:center;border-bottom:1px solid #1e293b}}
 .grid{{max-width:900px;margin:32px auto;padding:0 20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}}
 .s{{display:inline-block;background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px 20px;margin:4px}}</style></head>
 <body>
 <div class="hero">
-  <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#4f46e5;margin-bottom:8px">Sonar-Equivalent Methodology</div>
-  <h1 style="font-size:1.8rem;font-weight:800;color:#f1f5f9;margin-bottom:4px">Replicating Sprung Sonar</h1>
-  <p style="color:#64748b;font-size:.85rem;margin-bottom:16px">YouTube + Press Articles + Reddit · 26 Categories · No Steam Reviews</p>
+  <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#4f46e5;margin-bottom:8px">Dual-Stream Methodology</div>
+  <h1 style="font-size:1.8rem;font-weight:800;color:#f1f5f9;margin-bottom:4px">Sonar — Press &amp; Player Analysis</h1>
+  <p style="color:#64748b;font-size:.85rem;margin-bottom:16px">🗞️ Press (Articles + OpenCritic) · 👥 Players (Steam + Reddit) · 26 Categories</p>
   <div>
-    <span class="s"><span style="font-size:1.4rem;font-weight:800;color:#00d4ff">{avg}%</span><br><span style="font-size:10px;color:#475569">Avg Positive</span></span>
+    <span class="s"><span style="font-size:1.4rem;font-weight:800;color:#00d4ff">{avg}%</span><br><span style="font-size:10px;color:#475569">Avg Combined</span></span>
     <span class="s"><span style="font-size:1.4rem;font-weight:800;color:#818cf8">{tot:,}</span><br><span style="font-size:10px;color:#475569">Total Insights</span></span>
     <span class="s"><span style="font-size:1.4rem;font-weight:800;color:#4ade80">26</span><br><span style="font-size:10px;color:#475569">Categories</span></span>
   </div>
 </div>
 <div class="grid">{cards}</div>
 <div style="text-align:center;color:#334155;font-size:11px;padding:20px">
-  Generated {datetime.now().strftime('%B %d, %Y')} · Sonar-equivalent pipeline · {'AI' if USE_AI else 'KEYWORD'}
+  Generated {datetime.now().strftime('%B %d, %Y')} · Dual-stream: Press (Articles + OpenCritic) · Player (Steam + Reddit) · {'AI' if USE_AI else 'KEYWORD'}
 </div>
 </body></html>"""
-
-# ── Steam Info (metadata only — no reviews for Sonar mode) ────────────────────
-def get_steam_info(appid: int) -> dict:
-    try:
-        r = requests.get("https://store.steampowered.com/api/appdetails",
-                         params={"appids":appid,"l":"english"}, timeout=10)
-        d = r.json().get(str(appid),{})
-        if d.get("success"):
-            dd = d["data"]
-            return {"name":dd.get("name",""),"developer":", ".join(dd.get("developers",[])),"release_date":dd.get("release_date",{}).get("date",""),"header_image":dd.get("header_image",""),"genres":[g["description"] for g in dd.get("genres",[])]}
-    except: pass
-    return {}
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def process_game(game: dict) -> dict:
     name = game["name"]
     print(f"\n{'='*55}")
-    print(f"  {name.upper()} — SONAR EQUIVALENT")
+    print(f"  {name.upper()} — DUAL-STREAM SONAR")
     print(f"{'='*55}")
 
-    info = get_steam_info(game["appid"])  # metadata only
+    info        = get_steam_info(game["appid"])
     all_insights = []
     src_summary  = {"total_sources":0,"breakdown":[]}
+    oc_data      = {}
 
-    # ── YouTube (uses pre-fetched cache from youtube-scrape skill if available)
-    cached = load_cached_transcripts(game["slug"])
+    # ── PRESS STREAM ──────────────────────────────────────────────────────────
+
+    # YouTube (press) — cached only; live fetch disabled
+    cached   = load_cached_transcripts(game["slug"])
+    all_vids = cached  # may be empty list
     yt_insights = []
     if cached:
-        # Cache hit: use pre-fetched transcripts, no network calls needed
-        print(f"  ► YouTube: using transcript cache...")
-        all_vids = cached
-        for v in all_vids:
+        print(f"  ► YouTube: using transcript cache ({len(cached)} videos)...")
+        for v in cached:
             transcript = v.get("transcript", "")
             if len(transcript.split()) < 100:
-                print(f"    Skip (no transcript): {v['title'][:40]}")
+                print(f"    Skip (short): {v['title'][:40]}")
                 continue
             label = f"YouTube: {v['title'][:55]}"
             print(f"    {v['title'][:50]} ({len(transcript.split())} words)")
-            ins = extract_long(transcript, label)
+            ins = extract_long(transcript, label, stream="press")
             yt_insights.extend(ins)
             time.sleep(0.3)
     else:
-        # Live fetch fallback
-        print(f"  ► YouTube: reviews...")
+        print(f"  ► YouTube: SKIPPED (YT_BLOCKED=True; no cache found)")
+        # Live fetch path (runs if YT_BLOCKED is later set to False)
         vids_review = search_yt(name, "review", n=7)
-        print(f"  ► YouTube: analysis/deep dive...")
         vids_deep   = search_yt(name, "analysis deep dive critique", n=3)
-        all_vids    = {v["id"]:v for v in vids_review+vids_deep}.values()  # dedup
-        all_vids    = list(all_vids)[:10]
+        all_vids    = list({v["id"]:v for v in vids_review+vids_deep}.values())[:10]
         for v in all_vids:
             transcript = get_transcript(v["id"])
             if len(transcript.split()) < 100:
-                print(f"    Skip (no transcript): {v['title'][:40]}")
                 continue
             label = f"YouTube: {v['title'][:55]}"
-            print(f"    {v['title'][:50]} ({len(transcript.split())} words)")
-            ins = extract_long(transcript, label)
+            ins = extract_long(transcript, label, stream="press")
             yt_insights.extend(ins)
             time.sleep(0.5)
+
     print(f"    YouTube → {len(yt_insights)} insights from {len(all_vids)} videos")
     all_insights.extend(yt_insights)
-    src_summary["breakdown"].append({"type":"YouTube Videos","count":len(all_vids),"insights":len(yt_insights)})
+    src_summary["breakdown"].append({"type":"YouTube Videos","count":len(all_vids),"insights":len(yt_insights),"stream":"press"})
     src_summary["total_sources"] += len(all_vids)
 
-    # ── Gaming Press Articles (matches Sonar's "articles" source)
+    # Gaming press articles
     print(f"  ► Gaming press articles...")
-    articles = fetch_press_articles(name, n=5)
+    articles       = fetch_press_articles(name, n=5)
     press_insights = []
     for art in articles:
         label = f"Press: {art['title'][:50]}"
-        ins = extract_long(art["text"], label)
+        ins = extract_long(art["text"], label, stream="press")
         press_insights.extend(ins)
         time.sleep(0.3)
     print(f"    Press → {len(press_insights)} insights from {len(articles)} articles")
     all_insights.extend(press_insights)
-    src_summary["breakdown"].append({"type":"Gaming Press Articles","count":len(articles),"insights":len(press_insights)})
+    src_summary["breakdown"].append({"type":"Gaming Press Articles","count":len(articles),"insights":len(press_insights),"stream":"press"})
     src_summary["total_sources"] += len(articles)
 
-    # ── Reddit Community Boards (matches Sonar's "community discussion boards")
+    # OpenCritic critic reviews
+    print(f"  ► OpenCritic critic reviews...")
+    oc_data     = fetch_opencritic(name, n=10)
+    oc_insights = []
+    for rev in oc_data.get("reviews", []):
+        if rev.get("text") and len(rev["text"].strip()) > 30:
+            outlet = rev.get("outlet") or "OpenCritic"
+            ins = extract_short(rev["text"], f"OpenCritic: {outlet}", stream="press")
+            oc_insights.extend(ins)
+    n_oc = len(oc_data.get("reviews", []))
+    print(f"    OpenCritic → {len(oc_insights)} insights from {n_oc} reviews")
+    all_insights.extend(oc_insights)
+    src_summary["breakdown"].append({"type":"OpenCritic Reviews","count":n_oc,"insights":len(oc_insights),"stream":"press"})
+    src_summary["total_sources"] += n_oc
+
+    # ── PLAYER STREAM ─────────────────────────────────────────────────────────
+
+    # Steam reviews
+    print(f"  ► Steam reviews (up to 100)...")
+    steam_revs     = fetch_steam_reviews(game["appid"], max_r=100)
+    steam_insights = []
+    if USE_AI:
+        batch_size = 10
+        for i in range(0, min(len(steam_revs), 100), batch_size):
+            batch_text = "\n---\n".join(steam_revs[i:i+batch_size])
+            ins = ai_extract(batch_text, "Steam Review", stream="player")
+            steam_insights.extend(ins)
+            time.sleep(0.2)
+    else:
+        for rev in steam_revs:
+            steam_insights.extend(kw_extract(rev, "Steam Review", stream="player"))
+    print(f"    Steam → {len(steam_insights)} insights from {len(steam_revs)} reviews")
+    all_insights.extend(steam_insights)
+    src_summary["breakdown"].append({"type":"Steam Reviews","count":len(steam_revs),"insights":len(steam_insights),"stream":"player"})
+    src_summary["total_sources"] += len(steam_revs)
+
+    # Reddit community boards
     print(f"  ► Reddit community boards...")
-    reddit_posts = fetch_reddit(game["subreddit"], name, n=12)
+    reddit_posts    = fetch_reddit(game["subreddit"], name, n=12)
     reddit_insights = []
     for post in reddit_posts:
-        ins = extract_short(post["text"], f"Reddit: r/{game['subreddit']}")
+        ins = extract_short(post["text"], f"Reddit: r/{game['subreddit']}", stream="player")
         reddit_insights.extend(ins)
         time.sleep(0.3)
     print(f"    Reddit → {len(reddit_insights)} insights from {len(reddit_posts)} posts")
     all_insights.extend(reddit_insights)
-    src_summary["breakdown"].append({"type":"Reddit Community","count":len(reddit_posts),"insights":len(reddit_insights)})
+    src_summary["breakdown"].append({"type":"Reddit Community","count":len(reddit_posts),"insights":len(reddit_insights),"stream":"player"})
     src_summary["total_sources"] += len(reddit_posts)
 
-    # Aggregate + render
-    agg     = aggregate(all_insights)
-    tot_p   = sum(a["pos"]+a["mixed"] for a in agg.values())
-    tot_n   = sum(a["neg"] for a in agg.values())
-    tot     = tot_p + tot_n
-    pct     = round(tot_p/tot*100) if tot else 0
-    cats_covered = sum(1 for k,v in agg.items() if v["pos"]+v["neg"]+v["mixed"]>0)
+    # ── Aggregate + render ────────────────────────────────────────────────────
+    streams      = aggregate_by_stream(all_insights)
+    press_pct    = pct_from_agg(streams["press"])
+    player_pct   = pct_from_agg(streams["player"])
+    combined_pct = pct_from_agg(streams["combined"])
 
-    html = render_game(game, info, all_insights, agg, src_summary)
+    scores = {
+        "press_pct":       press_pct,
+        "player_pct":      player_pct,
+        "combined_pct":    combined_pct,
+        "opencritic_pct":  oc_data.get("percent_recommended"),
+        "top_critic_score": oc_data.get("top_critic_score"),
+    }
+
+    cats_covered = sum(1 for k,v in streams["combined"].items() if v["pos"]+v["neg"]+v["mixed"]>0)
+
+    html = render_game(game, info, all_insights, streams, src_summary, scores)
     (OUT_DIR / f"{game['slug']}.html").write_text(html, encoding="utf-8")
-    print(f"  ✓ {name}: {pct}% · {len(all_insights)} insights · {src_summary['total_sources']} sources · {cats_covered}/26 categories")
+    print(f"  ✓ {name}: press={press_pct}% player={player_pct}% combined={combined_pct}% "
+          f"· {len(all_insights)} insights · {src_summary['total_sources']} sources · {cats_covered}/26 cats")
 
     return {
-        "name": name, "slug": game["slug"], "era": game["era"],
-        "dev": info.get("developer",""),
-        "pct": pct, "n_insights": len(all_insights),
-        "n_sources": src_summary["total_sources"], "cats_covered": cats_covered,
+        "name":          name,
+        "slug":          game["slug"],
+        "era":           game["era"],
+        "dev":           info.get("developer",""),
+        "press_pct":     press_pct,
+        "player_pct":    player_pct,
+        "combined_pct":  combined_pct,
+        "opencritic_pct": oc_data.get("percent_recommended"),
+        "n_insights":    len(all_insights),
+        "n_sources":     src_summary["total_sources"],
+        "cats_covered":  cats_covered,
     }
 
 def main():
-    print(f"\n🔬 Sonar-Equivalent Pipeline")
-    print(f"   Mode: {'AI (Claude Haiku)' if USE_AI else 'KEYWORD fallback'}")
-    print(f"   Sources: YouTube + Gaming Press + Reddit (no Steam)")
-    print(f"   Categories: 26 (matching Sonar framework)")
+    print(f"\n🔬 Sonar Dual-Stream Pipeline")
+    print(f"   Mode:          {'AI (Claude Haiku)' if USE_AI else 'KEYWORD fallback'}")
+    print(f"   Press stream:  YouTube (cached) + Gaming Press + OpenCritic")
+    print(f"   Player stream: Steam Reviews (×100) + Reddit")
+    print(f"   Categories:    26 (matching Sonar framework)")
 
     games = GAMES
     if SOLO_GAME:
@@ -668,8 +927,10 @@ def main():
 
     print(f"\n{'='*55}")
     print(f"  DONE — {len(results)}/10 games")
-    for r in sorted(results, key=lambda x: x["pct"], reverse=True):
-        print(f"  {r['pct']:3}%  {r['n_insights']:4} insights  {r['cats_covered']}/26 cats  {r['name']}")
+    for r in sorted(results, key=lambda x: x["combined_pct"], reverse=True):
+        oc = f"{r['opencritic_pct']}%" if isinstance(r.get("opencritic_pct"), int) else "  —  "
+        print(f"  press={r['press_pct']:3}% player={r['player_pct']:3}% combined={r['combined_pct']:3}% oc={oc}"
+              f"  {r['n_insights']:4} ins  {r['cats_covered']}/26 cats  {r['name']}")
     print(f"  Reports: {OUT_DIR}/index.html")
 
 if __name__ == "__main__":
