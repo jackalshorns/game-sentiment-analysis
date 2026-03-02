@@ -20,8 +20,8 @@ _extra_bin = "/sessions/peaceful-gallant-albattani/.local/bin"
 if os.path.isdir(_extra_bin):
     os.environ["PATH"] += f":{_extra_bin}"
 
-# Global flag: set True if YouTube IpBlocks this VM — skip all further YT calls
-YT_BLOCKED = False
+# YouTube search deprecated — backlogged for re-enablement later
+YT_BLOCKED = True
 
 # ── Deps ─────────────────────────────────────────────────────────────────────
 try:

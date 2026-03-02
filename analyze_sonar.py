@@ -22,8 +22,8 @@ _extra_bin = "/sessions/peaceful-gallant-albattani/.local/bin"
 if os.path.isdir(_extra_bin):
     os.environ["PATH"] += f":{_extra_bin}"
 
-# Global: set True if YouTube blocks this VM's IP
-YT_BLOCKED = False
+# YouTube search deprecated — backlogged for re-enablement later
+YT_BLOCKED = True
 
 try:
     import anthropic
