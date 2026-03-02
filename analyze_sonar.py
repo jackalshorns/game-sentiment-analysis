@@ -830,20 +830,8 @@ def process_game(game: dict) -> dict:
     src_summary["breakdown"].append({"type":"Gaming Press Articles","count":len(articles),"insights":len(press_insights),"stream":"press"})
     src_summary["total_sources"] += len(articles)
 
-    # OpenCritic critic reviews
-    print(f"  ► OpenCritic critic reviews...")
-    oc_data     = fetch_opencritic(name, n=10)
-    oc_insights = []
-    for rev in oc_data.get("reviews", []):
-        if rev.get("text") and len(rev["text"].strip()) > 30:
-            outlet = rev.get("outlet") or "OpenCritic"
-            ins = extract_short(rev["text"], f"OpenCritic: {outlet}", stream="press")
-            oc_insights.extend(ins)
-    n_oc = len(oc_data.get("reviews", []))
-    print(f"    OpenCritic → {len(oc_insights)} insights from {n_oc} reviews")
-    all_insights.extend(oc_insights)
-    src_summary["breakdown"].append({"type":"OpenCritic Reviews","count":n_oc,"insights":len(oc_insights),"stream":"press"})
-    src_summary["total_sources"] += n_oc
+    # OpenCritic — DISABLED (API now requires auth key; backlogged for re-enable)
+    # fetch_opencritic() is still defined below for future use
 
     # ── PLAYER STREAM ─────────────────────────────────────────────────────────
 
