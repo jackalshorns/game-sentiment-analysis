@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 Sonar Dual-Stream Pipeline
-Press stream:  Gaming press articles + OpenCritic critic reviews (+ YouTube when re-enabled)
+Press stream:  Gaming press articles (+ YouTube when re-enabled)
 Player stream: Steam reviews + Reddit community boards
-Output:        Per-game HTML with Press Score, Player Score, OpenCritic reference + 26-category dual bars
+Reference:     Steam all-time review rating (total_positive / total_reviews)
+Output:        Per-game HTML with Press Score, Player Score, Steam Reference + 26-category dual bars
 
 Usage:
     python3 analyze_sonar.py
@@ -393,9 +394,13 @@ def fetch_opencritic(game_name: str, n: int = 10) -> dict:
         return {}
 
 # ── Steam Reviews (player stream) ─────────────────────────────────────────────
-def fetch_steam_reviews(appid: int, max_r: int = 100) -> list:
-    """Fetch recent Steam reviews. Capped at 100 to stay within Actions timeout."""
+def fetch_steam_reviews(appid: int, max_r: int = 100) -> tuple:
+    """Fetch recent Steam reviews + all-time summary stats.
+    Returns: (reviews_list, query_summary_dict)
+    query_summary has: total_positive, total_reviews, review_score_desc
+    """
     reviews, cursor = [], "*"
+    steam_summary = {}
     while len(reviews) < max_r:
         try:
             r = requests.get(f"https://store.steampowered.com/appreviews/{appid}",
@@ -403,6 +408,8 @@ def fetch_steam_reviews(appid: int, max_r: int = 100) -> list:
                                      "num_per_page":100,"cursor":cursor},
                              headers={"User-Agent":"Mozilla/5.0"}, timeout=15)
             data = r.json()
+            if not steam_summary:          # capture all-time stats from first page
+                steam_summary = data.get("query_summary", {})
             batch = data.get("reviews", [])
             if not batch:
                 break
@@ -414,35 +421,42 @@ def fetch_steam_reviews(appid: int, max_r: int = 100) -> list:
         except Exception as e:
             print(f"    Steam error: {e}")
             break
-    return reviews[:max_r]
+    return reviews[:max_r], steam_summary
 
 # ── Reddit (player stream) ────────────────────────────────────────────────────
 def fetch_reddit(subreddit: str, game_name: str, n: int = 12) -> list:
-    """Fetch posts from game subreddit + r/games + r/gaming (broader player signal)."""
+    """Fetch posts from game subreddit + r/games + r/gaming (broader player signal).
+    Tries api.reddit.com (official API, different rate-limit pool) before www.reddit.com.
+    """
     posts = []
     game_q = quote(game_name)
+    # api.reddit.com has a separate rate-limit pool and often works from cloud IPs
     urls = [
-        f"https://www.reddit.com/r/{subreddit}/top.json?t=year&limit={n}",
-        f"https://www.reddit.com/r/{subreddit}/search.json?q=review+feedback+thoughts&sort=top&t=year&limit=8",
-        f"https://www.reddit.com/r/games/search.json?q={game_q}&sort=top&t=year&limit=5",
-        f"https://www.reddit.com/r/gaming/search.json?q={game_q}&sort=top&t=year&limit=5",
+        f"https://api.reddit.com/r/{subreddit}/top.json?t=year&limit={n}",
+        f"https://api.reddit.com/r/{subreddit}/search.json?q=review+feedback+thoughts&sort=top&t=year&limit=8",
+        f"https://api.reddit.com/r/games/search.json?q={game_q}&sort=top&t=year&limit=5",
+        f"https://api.reddit.com/r/gaming/search.json?q={game_q}&sort=top&t=year&limit=5",
     ]
     seen = set()
     for url in urls:
         try:
-            r = requests.get(url, headers={"User-Agent":"GameSentimentBot/1.0"}, timeout=10)
-            if r.status_code == 200:
-                for c in r.json().get("data",{}).get("children",[]):
-                    d = c["data"]
-                    title = d.get("title","")
-                    text  = (d.get("selftext","") or "").strip()
-                    if title not in seen and (len(text) > 50 or len(title) > 40):
-                        seen.add(title)
-                        posts.append({
-                            "title": title,
-                            "text":  f"{title}. {text}"[:4000],
-                            "score": d.get("score",0),
-                        })
+            r = requests.get(url, headers={"User-Agent":"GameSentimentBot/1.0 (research)"}, timeout=10)
+            if r.status_code != 200:
+                print(f"    Reddit HTTP {r.status_code}: ...{url[-55:]}")
+                time.sleep(0.6)
+                continue
+            children = r.json().get("data",{}).get("children",[])
+            for c in children:
+                d = c["data"]
+                title = d.get("title","")
+                text  = (d.get("selftext","") or "").strip()
+                if title not in seen and (len(text) > 50 or len(title) > 40):
+                    seen.add(title)
+                    posts.append({
+                        "title": title,
+                        "text":  f"{title}. {text}"[:4000],
+                        "score": d.get("score",0),
+                    })
             time.sleep(0.6)
         except Exception as e:
             print(f"    Reddit error: {e}")
@@ -544,14 +558,14 @@ def render_game(game, info, all_ins, streams, src_summary, scores):
     press_pct    = scores.get("press_pct", 0)
     player_pct   = scores.get("player_pct", 0)
     combined_pct = scores.get("combined_pct", 0)
-    oc_pct       = scores.get("opencritic_pct")
-    oc_score     = scores.get("top_critic_score")
+    steam_ref    = scores.get("steam_ref_pct")
+    steam_desc   = scores.get("steam_ref_desc", "")
     press_count  = streams.get("press_count", 0)
     player_count = streams.get("player_count", 0)
 
     press_c    = color(press_pct)
     player_c   = "#4ade80"  # green for player
-    oc_c       = "#a78bfa"  # purple for reference
+    ref_c      = "#a78bfa"  # purple for reference
     combined_c = color(combined_pct)
 
     label = ("Overwhelmingly Positive" if combined_pct>=90 else
@@ -559,14 +573,13 @@ def render_game(game, info, all_ins, streams, src_summary, scores):
              "Mostly Positive"         if combined_pct>=70 else
              "Mixed"                   if combined_pct>=50 else "Negative")
 
-    oc_note   = f"Top critic score: {oc_score}" if oc_score else ""
-    oc_display = oc_pct if isinstance(oc_pct, int) else None  # None → score_panel shows "—"
+    ref_display = steam_ref if isinstance(steam_ref, int) else None
 
     panels_html = (
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px">'
-        + score_panel("🗞️", "Press Score",   press_pct,  press_c,  f"{press_count} insights",  "articles + OpenCritic")
-        + score_panel("👥", "Player Score",  player_pct, player_c, f"{player_count} insights", "Steam + Reddit")
-        + score_panel("📊", "Reference",     oc_display, oc_c,     "OpenCritic % rec.",         oc_note)
+        + score_panel("🗞️", "Press Score",    press_pct,   press_c,  f"{press_count} insights",  "press articles")
+        + score_panel("👥", "Player Score",   player_pct,  player_c, f"{player_count} insights", "Steam + Reddit")
+        + score_panel("📊", "Steam All-Time", ref_display, ref_c,    "all-time review rating",   steam_desc)
         + '</div>'
     )
 
@@ -701,17 +714,17 @@ def render_game(game, info, all_ins, streams, src_summary, scores):
   </div>
 
   <div style="text-align:center;color:#334155;font-size:11px;margin-top:20px">
-    Generated {datetime.now().strftime('%B %d, %Y')} · Press: articles + OpenCritic · Player: Steam + Reddit · {method}
+    Generated {datetime.now().strftime('%B %d, %Y')} · Press: articles · Player: Steam + Reddit · {method}
   </div>
 </div></body></html>"""
 
 def render_index(results: list) -> str:
     cards = ""
     for r in sorted(results, key=lambda x: x["combined_pct"], reverse=True):
-        pp  = r["press_pct"]
-        plp = r["player_pct"]
-        ocp = r["opencritic_pct"]
-        oc_str = f'{ocp}%' if isinstance(ocp, int) else '—'
+        pp     = r["press_pct"]
+        plp    = r["player_pct"]
+        ref    = r.get("steam_ref_pct")
+        ref_str = f'{ref}%' if isinstance(ref, int) else '—'
         cards += (
             f'<a href="{r["slug"]}.html" style="display:block;background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:18px;text-decoration:none;color:inherit">'
             f'<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
@@ -721,7 +734,7 @@ def render_index(results: list) -> str:
             f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">'
             f'<div style="text-align:center"><div style="font-size:1.2rem;font-weight:800;color:{color(pp)}">{pp}%</div><div style="font-size:9px;color:#475569">🗞️ Press</div></div>'
             f'<div style="text-align:center"><div style="font-size:1.2rem;font-weight:800;color:#4ade80">{plp}%</div><div style="font-size:9px;color:#475569">👥 Players</div></div>'
-            f'<div style="text-align:center"><div style="font-size:1.2rem;font-weight:800;color:#a78bfa">{oc_str}</div><div style="font-size:9px;color:#475569">📊 OpenCritic</div></div>'
+            f'<div style="text-align:center"><div style="font-size:1.2rem;font-weight:800;color:#a78bfa">{ref_str}</div><div style="font-size:9px;color:#475569">📊 Steam</div></div>'
             f'</div>'
             f'<div style="font-size:11px;color:#475569"><strong style="color:#818cf8">{r["n_insights"]}</strong> insights from <strong style="color:#818cf8">{r["n_sources"]}</strong> sources · {r["cats_covered"]} categories</div>'
             f'</a>'
@@ -740,7 +753,7 @@ def render_index(results: list) -> str:
 <div class="hero">
   <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#4f46e5;margin-bottom:8px">Dual-Stream Methodology</div>
   <h1 style="font-size:1.8rem;font-weight:800;color:#f1f5f9;margin-bottom:4px">Sonar — Press &amp; Player Analysis</h1>
-  <p style="color:#64748b;font-size:.85rem;margin-bottom:16px">🗞️ Press (Articles + OpenCritic) · 👥 Players (Steam + Reddit) · 26 Categories</p>
+  <p style="color:#64748b;font-size:.85rem;margin-bottom:16px">🗞️ Press (Articles) · 👥 Players (Steam + Reddit) · 📊 Steam All-Time · 26 Categories</p>
   <div>
     <span class="s"><span style="font-size:1.4rem;font-weight:800;color:#00d4ff">{avg}%</span><br><span style="font-size:10px;color:#475569">Avg Combined</span></span>
     <span class="s"><span style="font-size:1.4rem;font-weight:800;color:#818cf8">{tot:,}</span><br><span style="font-size:10px;color:#475569">Total Insights</span></span>
@@ -749,7 +762,7 @@ def render_index(results: list) -> str:
 </div>
 <div class="grid">{cards}</div>
 <div style="text-align:center;color:#334155;font-size:11px;padding:20px">
-  Generated {datetime.now().strftime('%B %d, %Y')} · Dual-stream: Press (Articles + OpenCritic) · Player (Steam + Reddit) · {'AI' if USE_AI else 'KEYWORD'}
+  Generated {datetime.now().strftime('%B %d, %Y')} · Dual-stream: Press (Articles) · Player (Steam + Reddit) · {'AI' if USE_AI else 'KEYWORD'}
 </div>
 </body></html>"""
 
@@ -834,9 +847,15 @@ def process_game(game: dict) -> dict:
 
     # ── PLAYER STREAM ─────────────────────────────────────────────────────────
 
-    # Steam reviews
+    # Steam reviews + all-time summary (used as reference score)
     print(f"  ► Steam reviews (up to 100)...")
-    steam_revs     = fetch_steam_reviews(game["appid"], max_r=100)
+    steam_revs, steam_summary = fetch_steam_reviews(game["appid"], max_r=100)
+    steam_total_pos  = steam_summary.get("total_positive", 0)
+    steam_total_rev  = steam_summary.get("total_reviews", 0)
+    steam_ref_pct    = round(steam_total_pos / steam_total_rev * 100) if steam_total_rev else None
+    steam_ref_desc   = steam_summary.get("review_score_desc", "")
+    if steam_ref_pct is not None:
+        print(f"    Steam all-time: {steam_ref_pct}% positive ({steam_total_rev:,} reviews) — {steam_ref_desc}")
     steam_insights = []
     if USE_AI:
         batch_size = 10
@@ -873,11 +892,11 @@ def process_game(game: dict) -> dict:
     combined_pct = pct_from_agg(streams["combined"])
 
     scores = {
-        "press_pct":       press_pct,
-        "player_pct":      player_pct,
-        "combined_pct":    combined_pct,
-        "opencritic_pct":  oc_data.get("percent_recommended"),
-        "top_critic_score": oc_data.get("top_critic_score"),
+        "press_pct":      press_pct,
+        "player_pct":     player_pct,
+        "combined_pct":   combined_pct,
+        "steam_ref_pct":  steam_ref_pct,
+        "steam_ref_desc": steam_ref_desc,
     }
 
     cats_covered = sum(1 for k,v in streams["combined"].items() if v["pos"]+v["neg"]+v["mixed"]>0)
@@ -895,7 +914,7 @@ def process_game(game: dict) -> dict:
         "press_pct":     press_pct,
         "player_pct":    player_pct,
         "combined_pct":  combined_pct,
-        "opencritic_pct": oc_data.get("percent_recommended"),
+        "steam_ref_pct": steam_ref_pct,
         "n_insights":    len(all_insights),
         "n_sources":     src_summary["total_sources"],
         "cats_covered":  cats_covered,
@@ -904,8 +923,9 @@ def process_game(game: dict) -> dict:
 def main():
     print(f"\n🔬 Sonar Dual-Stream Pipeline")
     print(f"   Mode:          {'AI (Claude Haiku)' if USE_AI else 'KEYWORD fallback'}")
-    print(f"   Press stream:  YouTube (cached) + Gaming Press + OpenCritic")
+    print(f"   Press stream:  YouTube (cached) + Gaming Press Articles")
     print(f"   Player stream: Steam Reviews (×100) + Reddit")
+    print(f"   Reference:     Steam all-time review rating")
     print(f"   Categories:    26 (matching Sonar framework)")
 
     games = GAMES
@@ -928,8 +948,8 @@ def main():
     print(f"\n{'='*55}")
     print(f"  DONE — {len(results)}/10 games")
     for r in sorted(results, key=lambda x: x["combined_pct"], reverse=True):
-        oc = f"{r['opencritic_pct']}%" if isinstance(r.get("opencritic_pct"), int) else "  —  "
-        print(f"  press={r['press_pct']:3}% player={r['player_pct']:3}% combined={r['combined_pct']:3}% oc={oc}"
+        ref = f"{r['steam_ref_pct']:3}%" if isinstance(r.get("steam_ref_pct"), int) else "  — "
+        print(f"  press={r['press_pct']:3}% player={r['player_pct']:3}% combined={r['combined_pct']:3}% steam={ref}"
               f"  {r['n_insights']:4} ins  {r['cats_covered']}/26 cats  {r['name']}")
     print(f"  Reports: {OUT_DIR}/index.html")
 
